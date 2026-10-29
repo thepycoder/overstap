@@ -67,3 +67,17 @@ Real example tonight: via Mol home 22:54, via Turnhout (bus 47 north, X41, IC) h
 Edge cases for A: routes that move *away* from home (Mol) draw leftward segments; stations
 at the same distance in different directions share a column (label them on the line, not in
 the header). Alternative x if crow-fly misleads: network distance or "best-case time to home".
+
+### Decision (user, 2026-10-29): one shared chart (option A) + highlighting
+
+Axis fix: straight-line distance made Retie ≈ Mol (both ~80 km from Hillarestraat; the bus
+moves you south while home is west), hiding the most valuable 14 minutes of the trip.
+Use **x = best-case travel time to home** instead (midday weekday, from MOTIS):
+Retie 136′ · Turnhout 126′ · Mol 101′ · Antwerpen-C 50′ · Berchem 45′ · Lokeren 12′.
+On this axis the bus to Mol gains 35′ of progress; the Turnhout bus only 10′.
+Compute per stop once per day (one-to-all from home, reversed) and cache.
+
+Key interaction (user): select one route → app overlays alternative legs per segment
+(bike vs bus to Mol, later IC at Berchem, four last-mile modes). Crossovers between modes
+are visible at a glance; reliability scoring later adds width/opacity per alternative.
+Mockup: canvas page "Two corridors", board F. Classic list + detail (D, E) for comparison.
