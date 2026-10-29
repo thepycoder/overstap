@@ -49,8 +49,13 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Contingency policies (decision trees) as output, via `numLegAlternatives`
 - [ ] Watch mode: re-run on every RT update, push notification when the best option changes
 
+## UI (see docs/ui-concepts.md)
+
+- [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
+- [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
+- [ ] Mobile PWA, reusing the old app's timeline as the comparison view
+
 ## Later / ideas
 
-- [ ] Mobile front-end (PWA?)
 - [ ] Custom McRAPTOR if stitching gets too slow (ADR-004 escalation)
 - [ ] Upstream to MOTIS: GBFS hub-only providers, lowering transfer times
