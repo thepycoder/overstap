@@ -1,0 +1,8 @@
+/target
+# MOTIS runtime data and downloaded inputs
+deploy/motis/data/
+deploy/motis/*.osm.pbf
+deploy/motis/*.zip
+deploy/motis/motis
+# secrets
+.env

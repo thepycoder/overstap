@@ -1,0 +1,9 @@
+[package]
+name = "overstap"
+version = "0.1.0"
+edition = "2021"
+description = "Personal multimodal journey planner for Belgium, orchestrating MOTIS"
+license = "MIT"
+
+[dependencies]
+# Added in Phase 2: reqwest, serde, serde_json, tokio, clap, chrono
