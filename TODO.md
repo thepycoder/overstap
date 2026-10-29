@@ -54,6 +54,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
 - [ ] Mobile PWA, reusing the old app's timeline as the comparison view
+- [ ] Ride mode: live position on the space-time line, precomputed fallback per change, buzz only when action/spare/arrival changes
+- [ ] Log GBFS station stock (predict empty stations)
+- [ ] Post-trip review: user-reported delays for vehicles without live data
 
 ## Later / ideas
 

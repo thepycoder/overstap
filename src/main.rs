@@ -149,6 +149,9 @@ fn shared_last_mile(
     let mut walk_q = q.clone();
     walk_q.pre_transit_modes = vec!["WALK".into()];
     walk_q.post_transit_modes = vec!["WALK".into()];
+    // Long walks are fine here: we want evening itineraries to compare bikes against.
+    walk_q.max_pre_transit_s = Some(3600);
+    walk_q.max_post_transit_s = Some(3600);
     let walk_its = c.plan(&walk_q)?.itineraries;
 
     let mut cands: Vec<lastmile::Candidate> = vec![];

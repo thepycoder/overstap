@@ -26,3 +26,25 @@ Data the views need beyond MOTIS itineraries:
 - fallback per change (re-plan from the change stop at "missed" time) → overshoot.rs pattern
 - leave-time sweep (many /plan calls over a window) → cheap, latency doesn't matter
 - delay distributions → GTFS-RT logger (Phase 3)
+
+## Round 2 (same canvas, three new pages)
+
+**Plan & ride**
+- A · Today's lane timeline (transit.projectwhy.be, portrait) vs B · space-time chart with a
+  bottom sheet; tap an arrival to highlight that route. Verdict so far: space-time wins (user).
+- Ride styles: (1) Next move + plan B per change, (2) you as a dot on the space-time line with
+  grey ghost routes per change, (3) dark one-column "thread" to scale, (4) lock screen + watch:
+  next action, spare time, arrival; buzz only when one of those changes.
+
+**When plans break** (alternatives are real MOTIS results unless marked "example")
+- Delay eats a buffer (11′ → 2′ at Berchem): go for it vs relax on IC 22:42 (23:22).
+- Connection cancelled: cancelled line crossed out, replacement lines fan out in space-time.
+- Missed my stop: space-time where the train carries you *away*; Olen + folding bike 09:12.
+- Last train lost: night mode; "ride it out" is a 5 h 26 hatched block, bail-out + bike 01:19.
+- Bike-share empty: stock sparkline (needs GBFS logging), Donkey hub vs walk.
+
+**Around the trip**: home with "leave by" + 10-minute-slot sparkline per saved trip; gear and
+tolerances (bike pass, speeds, own minimum change time, play-it-safe at night); post-trip
+planned-vs-actual with one-tap delay reports for vehicles without live data.
+
+New backend needs: GBFS stock logging; user-reported delays as training data.
