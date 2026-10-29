@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 # 1. MOTIS binary: GitHub release, or extract it from the official image.
 if [ ! -x motis ]; then
-  if command -v docker >/dev/null; then
+  if docker info >/dev/null 2>&1; then  # CLI alone isn't enough: needs a running daemon
     cid=$(docker create ghcr.io/motis-project/motis:latest)
     docker cp "$cid":/motis ./motis; docker cp "$cid":/ui ./ui; docker rm "$cid" >/dev/null
   else
@@ -29,5 +29,8 @@ else
   python3 ../../tools/fix_osm_refs.py belgium-raw.osm.pbf belgium.osm.pbf
   rm belgium-raw.osm.pbf
 fi
+
+# 4. Operators without a public GBFS feed: build a static one (ADR-011).
+python3 ../../tools/hoppy_gbfs.py --region Kempen --out gbfs/hoppy-kempen
 
 echo "Now: ./motis import && ./motis server"

@@ -4,5 +4,8 @@ deploy/motis/data/
 deploy/motis/*.osm.pbf
 deploy/motis/*.zip
 deploy/motis/motis
+deploy/motis/gbfs/
+deploy/motis/ui/
+deploy/motis/tiles-profiles/
 # secrets
 .env

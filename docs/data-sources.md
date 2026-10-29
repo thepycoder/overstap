@@ -35,6 +35,18 @@ public-transport/transitous) and the Transitland atlas
 | Dott Ghent / Brussels | `https://gbfs.api.ridedott.com/public/v2/{ghent,brussels}/gbfs.json` | |
 | Bolt Brussels, Lime/Voi/Bird/Felyx Antwerp | see Transitland atlas | Not in config yet |
 | Donkey Mechelen | — | **Not found** in either feed list (verify) |
+| Hoppy Kempen (485 e-bikes, 95 zones, back-to-many) | — (generated, `deploy/motis/gbfs/hoppy-kempen`) | **No public GBFS** (not in MobilityData `systems.csv`, Transitous, transportdata.be). Built by `tools/hoppy_gbfs.py` from the Hoppinpunt dataset → 78 of 95 zones; availability assumed (ADR-011) |
+| Hoppy elsewhere | same tool, `--region <VVR>` | Hoppinpunt data also tags Hoppy bikes in Vlaamse Ardennen (46), Dender (41), Midwest (28), Brugge (22), Westhoek (13), Limburg (10), Mechelen (6). Pricing/rules per region unchecked |
+
+### Hoppinpunt dataset (DMOW)
+
+Every Flemish mobility hub as a polygon, with `Deelsystemen_operatoren` and
+`Deelsystemen_operator_aanbod` (operator + vehicle type). Two ways in:
+
+- `https://hoppin.be/nl/vind-hoppinpunten/` embeds all 961 hubs as GeoJSON
+  Features in the HTML (what `tools/hoppy_gbfs.py` scrapes; works from the cloud workspace).
+- Official WMS/WFS `https://geoserver.gis.cloud.mow.vlaanderen.be/geoserver/hoppin/…`
+  (listed on transportdata.be). **403** from the cloud workspace; untested from home.
 
 ## Streets
 

@@ -116,3 +116,28 @@ MOTIS never offers it one-way, although a round trip is often the best plan.
 **Decision.** Keep provider rules in overstap (`lastmile.rs`): hub-only providers
 are re-routed to their best hub; round-trip providers are priced as tours.
 Consider upstreaming a MOTIS config option for hub-only providers later.
+
+---
+
+## ADR-011 — Synthesise static GBFS for operators without a feed
+*2026-10-29 · accepted*
+
+**Context.** Hoppy (Vervoerregio Kempen: 485 e-bikes, 95 zones, return at any
+zone) publishes no GBFS. Its zones are, however, recorded in DMOW's Hoppinpunt
+dataset, which names the operators at every hub. Missing it cost a real trip:
+Retie Markt had bikes while bus 47 was 36 min late.
+
+**Decision.** `tools/hoppy_gbfs.py` turns the Hoppy-tagged hubs of one
+vervoerregio into a static GBFS 2.3 feed: virtual stations (centroid + hub
+polygon as `station_area`), one `electric_assist` vehicle type with
+`return_constraint: any_station`, and a constant `--assume-bikes` per hub. MOTIS
+reads it from a local directory (a non-HTTP `url` in `config.yml`).
+
+**Consequences.**
+- MOTIS models the return rule natively, so no overstap correction is needed.
+- No live availability: a plan using Hoppy means "if a bike is there". Treat it
+  as an option to check in the app, not a guarantee.
+- MOTIS routes all rentals with osr's bike-sharing profile (~15 km/h), so e-bike
+  legs come out ~25 % slower than reality — conservative.
+- Hubs missing from the Hoppinpunt data (17 of 95 in Kempen) are invisible.
+- Replace with a real feed as soon as Hoppy or IOK publishes one.

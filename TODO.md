@@ -23,6 +23,11 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Enable tiles for the web UI
 - [ ] Nightly re-import (GTFS changes daily)
 - [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
+- [x] Hoppy Kempen as a generated static GBFS feed (`tools/hoppy_gbfs.py`, ADR-011)
+- [ ] Hoppy: ask Hoppy / IOK (Vervoerregio Kempen) for a public GBFS feed with live availability
+- [ ] Hoppy: the 17 Kempen zones not in the Hoppinpunt data (hand-curated list?)
+- [ ] Hoppy: other regions (Vlaamse Ardennen, Dender, Midwest, Brugge, …) once their rules are checked
+- [ ] E-bike speed: MOTIS uses ~15 km/h for every rental; re-time `ELECTRIC_ASSIST` legs (≈20 km/h) in overstap
 
 ## Phase 2 — Orchestration MVP (Rust)
 
