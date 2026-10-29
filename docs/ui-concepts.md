@@ -48,3 +48,22 @@ tolerances (bike pass, speeds, own minimum change time, play-it-safe at night); 
 planned-vs-actual with one-tap delay reports for vehicles without live data.
 
 New backend needs: GBFS stock logging; user-reported delays as training data.
+
+## Multiple corridors on one space-time chart (round 3)
+
+Problem: the x axis is one line of stations; via Mol and via Turnhout are different geographies.
+Real example tonight: via Mol home 22:54, via Turnhout (bus 47 north, X41, IC) home 23:22.
+
+- **A · x = straight-line distance to home** (recommended default). Works for any number of
+  corridors; columns merge where corridors physically meet (Berchem ≈ Antwerpen-C., both
+  35 km); corridor = colour halo; station names written on the line at waits.
+  Side effect worth keeping: detours become visible (Mol is as far from home as Retie: the
+  bus there buys speed, not distance).
+- **B · small multiples**: one narrow panel per corridor, shared time axis, compare arrivals
+  by height. Good for 2–3 corridors, breaks for routes that switch corridor mid-way.
+- **C · x = % of route done + column highlight on tap**: every route 0→100 %, selected
+  corridor's stations light up. Clean, but equal x no longer means the same place.
+
+Edge cases for A: routes that move *away* from home (Mol) draw leftward segments; stations
+at the same distance in different directions share a column (label them on the line, not in
+the header). Alternative x if crow-fly misleads: network distance or "best-case time to home".
