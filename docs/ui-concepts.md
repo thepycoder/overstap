@@ -81,3 +81,24 @@ Key interaction (user): select one route → app overlays alternative legs per s
 (bike vs bus to Mol, later IC at Berchem, four last-mile modes). Crossovers between modes
 are visible at a glance; reliability scoring later adds width/opacity per alternative.
 Mockup: canvas page "Two corridors", board F. Classic list + detail (D, E) for comparison.
+
+## Variations of one selected route (round 4, page "Variations of one route")
+
+Real ladder for via Mol (Thu evening): IC 20:58 Mol → Geel 21:06 → Olen 21:12 → Herentals 21:19
+→ Lier 21:35 → Berchem 21:45. Bike from Retie: Mol 41′, Geel 60′, Olen 80′, Herentals 90′.
+Other trains: Mol S33 20:34 / IC 21:58; Berchem IC 21:42 / S34 22:01 / IC 22:42 / S34 22:59.
+Finding: biking further down the line never buys margin here: the train covers Mol→Geel
+(8′) faster than the extra ride (19′). The UI should show such options as *dominated*.
+
+1. **Braided lane**: selected route as the main lane; thin strands branch off for other ways
+   to do a leg and rejoin where they connect (bike→Geel joins the IC at its Geel stop).
+   Dashed ghost blocks for earlier/later trains; last-mile strands at the bottom.
+2. **Mix and match**: one row per leg, swipe options, to-scale bars, effect on arrival.
+3. **Leave later vs margin** (interactive Dry/Rain): x = leave home, y = platform margin.
+   Bike options are diagonal lines (leave earlier → more margin), the bus is a point with a
+   whisker (spread). Rain slows bikes and widens bus spread; the recommendation flips.
+4. **Diff two variants**: two lanes, identical parts greyed, middle column lists only the
+   differences (leave time, time moving, margin, spread, rain).
+
+Backend needs: per-leg alternative generation (ride/bus to each stop of the chosen train,
+adjacent departures per train leg), dominance pruning, weather input, spread from delay log.
