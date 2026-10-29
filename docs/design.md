@@ -84,14 +84,29 @@ state determines which edges are legal next.
 So "no nigiri" is not a concern: nigiri *is* MOTIS's transit core. We just don't
 modify it.
 
+### What MOTIS v2.11 already does (verified against `openapi.yaml`, 2026-10-29)
+
+Better than first assumed:
+
+- `preTransitModes` / `postTransitModes` = `BIKE` → folding bike first/last mile (up to
+  `street_routing_max_prepost_transit_seconds`, 1 h).
+- `requireBikeTransport=true` → only trips that allow bikes (NMBS GTFS has no
+  `bikes_allowed`; we set `default_bikes_allowed: true` for the SNCB dataset).
+- `RENTAL` modes + GBFS, **including return constraints**
+  (`returnConstraint: NONE | ANY_STATION | ROUNDTRIP_STATION`). Blue-bike is
+  `ROUNDTRIP_STATION`, so MOTIS won't propose dropping it at Nekkerhal.
+- `minTransferTime`, `additionalTransferTime`, `transferTimeFactor` (≥ 1).
+- `numLegAlternatives`: alternatives per transit leg (useful for contingency plans).
+- `/api/v6/trip`, `/api/v6/stoptimes`, `/api/v1/one-to-many`, `/api/v1/rentals`.
+
 ### What the orchestration layer adds
 
-| Gap in MOTIS (as understood 2026-10) | How overstap covers it |
+| Gap in MOTIS | How overstap covers it |
 |---|---|
-| Bike as a *transfer* between two transit legs | Query transit candidates, bike between stations via osr (or BRouter), query again for the onward leg |
-| Rental return / parking rules | Price round-trip rentals as tours; filter end points by GBFS dock availability and geofences |
-| Origin "aboard trip X" | Query from each downstream stop at its (real-time) arrival time; take the Pareto front |
-| Custom transfer slack | MOTIS transfer-time parameters where available; otherwise post-filter / re-query |
+| Bike as a *transfer* between two transit legs (pre/post-transit only) | Query transit candidates, bike between stations via osr (or BRouter), query again for the onward leg |
+| Round-trip rental priced as a tour (the ride back to the station) | Add the return leg cost when comparing a `ROUNDTRIP_STATION` rental with other options |
+| Origin "aboard trip X" | **Implemented** (`overstap overshot`): query from each downstream stop at its real-time arrival; rank |
+| Transfers *shorter* than the feed's (`minTransferTime` can only raise them) | Preprocess NMBS `transfers.txt` before import (NMBS GTFS uses 240 s at most stations, 300 s at some) |
 | Delay risk | Score candidate journeys with delay distributions from our own GTFS-RT history |
 | Contingency plans | Build a decision tree over key delay events, re-evaluated on each RT update |
 

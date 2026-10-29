@@ -1,0 +1,41 @@
+server:
+  port: 8080
+  web_folder: ui
+osm: belgium.osm.pbf
+timetable:
+  first_day: TODAY
+  num_days: 14
+  railviz: true
+  with_shapes: false
+  adjust_footpaths: true
+  link_stop_distance: 100
+  update_interval: 60
+  http_timeout: 30
+  max_footpath_length: 15
+  default_transfer_time: 2
+  datasets:
+    sncb:
+      path: sncb.zip
+      default_bikes_allowed: true
+      rt:
+        - url: https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de
+    delijn:
+      path: delijn.zip
+      rt:
+        - url: https://api-management-opendata-production.azure-api.net/api/gtfs/feed/delijn/rt/trip-update?format=protobuf
+gbfs:
+  feeds:
+    blue-bike:
+      url: https://api.delijn.be/gbfs/gbfs.json
+    velo-antwerpen:
+      url: https://gbfs.smartbike.com/antwerp/1.0/gbfs.json
+    donkey-antwerp:
+      url: https://stables.donkey.bike/api/public/gbfs/3.0/donkey_antwerp/gbfs.json
+    donkey-ghent:
+      url: https://stables.donkey.bike/api/public/gbfs/3.0/donkey_gh/gbfs.json
+    dott-ghent:
+      url: https://gbfs.api.ridedott.com/public/v2/ghent/gbfs.json
+street_routing: true
+osr_footpath: true
+geocoding: true
+reverse_geocoding: true

@@ -6,4 +6,11 @@ description = "Personal multimodal journey planner for Belgium, orchestrating MO
 license = "MIT"
 
 [dependencies]
-# Added in Phase 2: reqwest, serde, serde_json, tokio, clap, chrono
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+chrono-tz = "0.10"
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+

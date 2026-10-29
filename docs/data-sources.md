@@ -1,56 +1,54 @@
 # Data sources
 
-Status as researched on 2026-10-29. "Verify" = not yet confirmed hands-on.
+Status checked hands-on on 2026-10-29 (download + MOTIS import) unless marked "verify".
 
 ## Public transport
 
-| Source | Format | Access | Notes |
-|---|---|---|---|
-| NMBS/SNCB timetable | GTFS static (daily) | Free, requires signing a licence contract | Also NeTEx. Real-time updated every 30 s |
-| NMBS/SNCB real time | GTFS-RT | Same contract | Delays, cancellations, platforms |
-| iRail | REST (liveboards, connections) | Open, unofficial | Good for prototyping; not our primary source |
-| De Lijn timetable | GTFS static | API key via data.delijn.be (portal.delijn.be) | Daily updates |
-| De Lijn real time | GTFS-RT | API key, separate subscription | Every minute. Limits: 864k calls/product/day, 6000/min |
-| De Lijn Open Data API | REST | API key | Search, stops, detours, its own routing — handy for debugging |
-| TEC (Wallonia) | GTFS | Verify | Lower priority |
-| STIB/MIVB (Brussels) | GTFS + API | API key (opendata.stib-mivb.be) | Lower priority |
-| Transitous feed list | JSON feed definitions | Open (git) | Reuse the Belgian entries for our MOTIS config. Verify exact file (likely `feeds/be.json`) and licences |
+| Source | Format | URL | Access | Notes |
+|---|---|---|---|---|
+| NMBS/SNCB timetable | GTFS static | `https://sncb-opendata.hafas.de/gtfs/static/c21ac6758dd25af84cca5b707f3cb3de` | Public (key in URL, from Transitous) | 39 MB zip. `transfers.txt` sets 240 s at most stations, 300 s at some |
+| NMBS/SNCB real time | GTFS-RT | `https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de` | Public | ~130 KB per fetch |
+| De Lijn timetable | GTFS static | `https://api-management-opendata-production.azure-api.net/api/gtfs/feed/delijn/static` | Worked **without** a key (Transitous sends a `bmc-partner-key` header) | 208 MB zip, 1.7 GB `stop_times.txt` |
+| De Lijn real time | GTFS-RT | `…/api/gtfs/feed/delijn/rt/trip-update?format=protobuf` (+ `/rt/alert`) | Worked without a key | ~1.8 MB per fetch |
+| NMBS (alt. portal) | GTFS + RT | `…/api/gtfs/feed/nmbssncb/static`, `…/nmbssncb/rt/trip-update` | Same Belgian Mobility portal | From Transitland atlas; not tested |
+| TEC | GTFS + RT | `…/api/gtfs/feed/tec/static`, `…/tec/rt/trip-update` | Same portal | Lower priority |
+| STIB/MIVB | GTFS | `…/api/gtfs/feed/stibmivb/static` | Same portal | Lower priority |
+| iRail | REST | api.irail.be | Open, unofficial | Prototyping only |
 
-Note: Transitous's public API (api.transitous.org) has a usage policy; we
-self-host MOTIS anyway, so we only reuse their *feed definitions*.
+The "Belgian Mobility" portal (`api-management-opendata-production.azure-api.net`) is
+the national access point; registering for a `bmc-partner-key` is still wise in
+case anonymous access gets closed.
 
-## Shared bikes (GBFS)
+Feed definitions come from Transitous (`feeds/be.json` in
+public-transport/transitous) and the Transitland atlas
+(`feeds/belgianmobility.io.dmfr.json`, `feeds/nabsa.github.com.dmfr.json`).
 
-GBFS = General Bikeshare Feed Specification: JSON files for station info,
-station status (bikes/docks available), free-floating vehicles, and
-geofencing zones. MOTIS ingests GBFS directly.
+## Shared bikes (GBFS) — all reachable, no key
 
-| Operator | Type | GBFS? |
+| Operator | GBFS URL | Notes |
 |---|---|---|
-| Blue-bike | station-based, mostly return-to-same-station | Verify |
-| Velo Antwerpen | docked | Verify |
-| Donkey Republic | docks / virtual parking zones | Verify |
-| Dott | free-floating | Verify |
-| Others (Bolt, Mobit, …) | | Verify |
-
-Check each against the MobilityData GBFS systems catalog.
-
-Return rules (e.g. Blue-bike zones that allow returning at another station)
-are probably *not* in GBFS and will need a small hand-maintained config.
+| Blue-bike (all stations) | `https://api.delijn.be/gbfs/gbfs.json` | GBFS 2.3, has `geofencing_zones` |
+| Velo Antwerpen | `https://gbfs.smartbike.com/antwerp/1.0/gbfs.json` | |
+| Donkey Republic Antwerp | `https://stables.donkey.bike/api/public/gbfs/3.0/donkey_antwerp/gbfs.json` | |
+| Donkey Republic Ghent | `https://stables.donkey.bike/api/public/gbfs/3.0/donkey_gh/gbfs.json` | |
+| Donkey Kortrijk / Westhoek | `…/donkey_kortrijk_leiedal/gbfs`, `…/donkey_westhoek/gbfs.json` | Not in config yet |
+| Dott Ghent / Brussels | `https://gbfs.api.ridedott.com/public/v2/{ghent,brussels}/gbfs.json` | |
+| Bolt Brussels, Lime/Voi/Bird/Felyx Antwerp | see Transitland atlas | Not in config yet |
+| Donkey Mechelen | — | **Not found** in either feed list (verify) |
 
 ## Streets
 
-| Source | Use |
-|---|---|
-| OpenStreetMap, Geofabrik Belgium extract | MOTIS street graph (osr): walk/bike footpaths, first/last mile |
-| BRouter (optional) | More tunable bike profiles if osr's bike routing is too crude |
-| Citymapper web API (unauthenticated) | **Benchmark only**, never a dependency — can vanish any day. Reuse the old Citymapper project's client for comparisons |
-| OsmAnd | Reference for bike-routing quality |
+| Source | Use | Status |
+|---|---|---|
+| Geofabrik Belgium extract | Preferred OSM source | **Blocked** from the cloud workspace; fine from home |
+| openstreetmap.fr Belgium extract | Fallback | Works, but 3,041 ways reference missing nodes → crashes osr with `osmium::invalid_location`. Cleaned with `tools/fix_osm_refs.py` |
+| BRouter (optional) | Tunable bike profiles | Not set up |
+| Citymapper web API | Benchmark only (ADR-007) | — |
 
 ## Our own data
 
 | Dataset | Source | Why |
 |---|---|---|
-| GTFS-RT history | Logger polling NMBS + De Lijn RT | Delay distributions → reliability scoring. Start ASAP: value grows with time |
-| Station transfer times | Hand-curated + OSM indoor data | Replace NMBS's blanket 5-min rule with real platform-to-platform times |
+| GTFS-RT history | Logger polling NMBS + De Lijn RT | Delay distributions → reliability scoring. Start ASAP |
+| Station transfer times | NMBS `transfers.txt` + hand-curated | Allow tighter transfers than the feed's 4–5 min where realistic |
 | Folding-bike penalties | Config | Fold/unfold time, stairs, crowding |

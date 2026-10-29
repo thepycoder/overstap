@@ -2,48 +2,53 @@
 
 Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to docs where useful.
 
-## Phase 0 — Foundations (start now)
+## Phase 0 — Foundations
 
 - [x] Write down design, data sources and decisions (`docs/`)
 - [x] Scaffold Rust crate
-- [ ] Push repo to GitHub (create empty repo, then connect it to Claude sessions)
-- [ ] Request API keys: De Lijn (GTFS static, GTFS-RT, Open Data) via data.delijn.be
-- [ ] Request NMBS/SNCB open-data licence (GTFS + GTFS-RT)
-- [ ] Find the Transitous Belgian feed definitions (likely `feeds/be.json`), list feeds + licences in `docs/data-sources.md`
-- [ ] Verify GBFS availability per operator: Blue-bike, Velo Antwerpen, Donkey Republic, Dott (MobilityData catalog)
-- [ ] **GTFS-RT logger** (ADR-006): poll NMBS + De Lijn RT, store raw protobuf + parsed delays (SQLite/Parquet). Run on an always-on box
+- [ ] Push repo to GitHub (`gh repo create overstap --private --source=. --push`)
+- [x] Find Transitous Belgian feed definitions → `docs/data-sources.md`
+- [x] Verify GBFS per operator (Blue-bike, Velo, Donkey, Dott all public)
+- [ ] Register a `bmc-partner-key` on the Belgian Mobility portal (De Lijn/TEC/STIB) in case anonymous access closes
+- [ ] Find Donkey Republic Mechelen feed (bikes appear under `donkey_antwerp`; confirm coverage)
+- [ ] **GTFS-RT logger** (ADR-006): poll NMBS + De Lijn RT every 30–60 s, store raw protobuf + parsed delays. Run on an always-on box
 
-## Phase 1 — MOTIS running locally
+## Phase 1 — MOTIS running
 
-- [ ] Pick host (homelab / VPS). Target: 16 GB RAM for import, less for serving
-- [ ] `deploy/motis`: download release, Belgium OSM (Geofabrik), GTFS feeds → `motis config` / `import` / `server`
-- [ ] Add GTFS-RT and GBFS feeds to `config.yml`
-- [ ] Check the OpenAPI spec for: transfer-time params, bike carriage, rental modes, one-to-many/matrix endpoint, trip-based origin
-- [ ] Manually run the three use cases in the MOTIS web UI; note what's missing → update `docs/design.md` gap table
+- [x] Run MOTIS v2.11.4 with Belgium OSM + NMBS + De Lijn + RT + 5 GBFS feeds (cloud workspace)
+- [x] `deploy/motis/config.yml` + `fetch-data.sh`
+- [x] Check the OpenAPI spec (see design §4: more is built in than assumed)
+- [x] Run the three use cases → `docs/results-2026-10-29.md`
+- [ ] Pick a permanent host (homelab/VPS; 2 GB RAM serving is enough, ~4 GB import)
+- [ ] Enable tiles for the web UI
+- [ ] Nightly re-import (GTFS changes daily)
+- [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
 
 ## Phase 2 — Orchestration MVP (Rust)
 
-- [ ] Typed MOTIS client (generate from `openapi.yaml` or hand-write the few endpoints we use)
-- [ ] Domain model: `VehicleState`, `Leg`, `Journey`, scoring criteria
-- [ ] CLI: `overstap plan <from> <to> [--at] [--state folding-bike]`
-- [ ] Use case 2: origin "aboard trip X" → query from each downstream stop, Pareto-merge
-- [ ] Use case 1: folding bike / rental last-mile comparison incl. return-leg (tour) cost and dock availability
-- [ ] Bike-between-transit-legs stitching
-- [ ] Custom transfer slack per station (config file)
-- [ ] Benchmark harness vs. Citymapper / NMBS planner on a fixed set of my real trips
+- [x] Typed MOTIS client (`/plan`, `/trip`, `/geocode`, `/rentals`)
+- [x] CLI: `overstap plan <from> <to> [--at] [--carry foot|folding|shared]`
+- [x] Use case 2: `overstap overshot <dest> --trip <id> [--folding]`
+- [x] Use case 1: hub-only correction (Donkey) + round-trip tour pricing (Blue-bike)
+- [x] End-to-end tests (`tests/use_cases.rs`, skip when MOTIS is down)
+- [ ] Look up the current trip by "I'm on the 08:09 to Mol" instead of a raw tripId
+- [ ] Geocode venues to entrances (Nekkerhal centroid snapped wrong)
+- [ ] Preprocess NMBS `transfers.txt` for personal transfer slack (MOTIS can only raise transfer times)
+- [ ] Bike-between-transit-legs stitching (folding bike mid-journey)
+- [ ] Provider rules as a config file instead of constants in `lastmile.rs`
+- [ ] Rental dock availability at drop-off (docks free) and bike availability at pickup time
+- [ ] Benchmark harness vs Citymapper / NMBS planner on my real trips
 
 ## Phase 3 — Real time & reliability
 
+- [x] Delay *simulation* (`--delay N`) for use case 3
 - [ ] Delay distributions from logger history
 - [ ] P(transfer holds) and expected-arrival scoring
-- [ ] Use case 3: delay → replan, compare "ride it out" vs "bail out"
-- [ ] Contingency policies (decision trees) as output
-- [ ] Push notifications when the best policy changes
+- [ ] Contingency policies (decision trees) as output, via `numLegAlternatives`
+- [ ] Watch mode: re-run on every RT update, push notification when the best option changes
 
 ## Later / ideas
 
 - [ ] Mobile front-end (PWA?)
-- [ ] TEC + STIB feeds
 - [ ] Custom McRAPTOR if stitching gets too slow (ADR-004 escalation)
-- [ ] Upstream proposals to MOTIS (cycling transfers, transfer slack)
-- [ ] Per-station hand-curated transfer times
+- [ ] Upstream to MOTIS: GBFS hub-only providers, lowering transfer times

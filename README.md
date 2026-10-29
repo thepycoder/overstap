@@ -28,10 +28,30 @@ TODO.md               living task list
 docs/design.md        problem, use cases, architecture, algorithm background
 docs/data-sources.md  every feed/API we plan to use, with status and caveats
 docs/decisions.md     decision log (ADR-style) — why things are the way they are
-deploy/motis/         how we self-host MOTIS
-src/                  the Rust orchestration layer (skeleton)
+deploy/motis/         config.yml + fetch-data.sh to self-host MOTIS
+tools/                data preprocessing (OSM cleaner)
+src/                  Rust orchestration layer: MOTIS client, last-mile rules, overshoot/delay
+tests/                end-to-end tests against a running MOTIS
+```
+
+## Quick start
+
+```sh
+cd deploy/motis && ./fetch-data.sh && ./motis import && ./motis server   # ~3 min import
+cargo build
+export MOTIS_URL=http://localhost:8080
+
+# Use case 1: compare last-mile options (walk / folding bike / shared bikes)
+overstap plan 51.1069,3.9859 51.02566,4.50349 --at "2026-10-30 08:00" --carry shared
+overstap plan 51.1069,3.9859 51.02566,4.50349 --at "2026-10-30 08:00" --carry folding
+
+# Use cases 2/3: on a train, missed the stop or delayed → where to get off?
+overstap overshot <dest> --trip <tripId> --now "2026-10-30 08:42" [--folding] [--delay 15]
+
+cargo test   # unit tests + end-to-end tests (skipped when MOTIS is down)
 ```
 
 ## Status
 
-Design phase. Nothing routes yet. See `TODO.md` for the next steps.
+MOTIS runs with real Belgian data; all three use cases work end to end
+(`docs/results-2026-10-29.md`). Next steps are in `TODO.md`.
