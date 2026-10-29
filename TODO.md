@@ -33,6 +33,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] End-to-end tests (`tests/use_cases.rs`, skip when MOTIS is down)
 - [ ] Look up the current trip by "I'm on the 08:09 to Mol" instead of a raw tripId
 - [ ] Geocode venues to entrances (Nekkerhal centroid snapped wrong)
+- [ ] Better geocoding fallback ("'t Veld, Retie" not found): local names / hamlets list, fuzzy street match
+- [ ] Present walk-vs-wait trade-offs (long walk vs late bus) instead of a hard walk cap
 - [ ] Preprocess NMBS `transfers.txt` for personal transfer slack (MOTIS can only raise transfer times)
 - [ ] Bike-between-transit-legs stitching (folding bike mid-journey)
 - [ ] Provider rules as a config file instead of constants in `lastmile.rs`

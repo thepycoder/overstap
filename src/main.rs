@@ -68,6 +68,9 @@ enum Cmd {
         window: u32,
         #[arg(long, default_value_t = 5)]
         show: usize,
+        /// Max minutes on the bike / rental before and after transit.
+        #[arg(long, default_value_t = 30)]
+        max_bike: u32,
     },
     /// You're on a train (use cases 2 and 3): evaluate getting off at each of
     /// the next N stops and continuing from there. `--delay` simulates a delay.
@@ -239,6 +242,7 @@ fn main() -> Result<()> {
             min_transfer,
             window,
             show,
+            max_bike,
         } => {
             let mut q = motis::PlanQuery::new(resolve_place(&c, &from)?, resolve_place(&c, &to)?);
             q.time = at.as_deref().map(parse_local).transpose()?;
@@ -246,19 +250,24 @@ fn main() -> Result<()> {
             q.min_transfer_time_min = min_transfer;
             q.direct_modes = vec!["WALK".into(), "BIKE".into()];
             match carry {
-                Carry::Foot => {}
+                Carry::Foot => {
+                    // MOTIS defaults to 15 min; a 2 km walk from the station is normal.
+                    q.max_pre_transit_s = Some(3600);
+                    q.max_post_transit_s = Some(3600);
+                }
                 Carry::Folding => {
                     q.pre_transit_modes = vec!["BIKE".into()];
                     q.post_transit_modes = vec!["BIKE".into()];
-                    q.max_pre_transit_s = Some(1800);
-                    q.max_post_transit_s = Some(1800);
+                    q.max_pre_transit_s = Some(max_bike * 60);
+                    q.max_post_transit_s = Some(max_bike * 60);
+                    q.max_direct_s = Some(max_bike.max(60) * 60 * 3);
                     q.require_bike_transport = true;
                 }
                 Carry::Shared => {
                     q.pre_transit_modes = vec!["WALK".into(), "RENTAL".into()];
                     q.post_transit_modes = vec!["WALK".into(), "RENTAL".into()];
-                    q.max_pre_transit_s = Some(1800);
-                    q.max_post_transit_s = Some(1800);
+                    q.max_pre_transit_s = Some(max_bike * 60);
+                    q.max_post_transit_s = Some(max_bike * 60);
                 }
             }
             let r = c.plan(&q)?;
