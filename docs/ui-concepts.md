@@ -117,6 +117,7 @@ come later as views over the same `/api/journeys` data.
 Board 1 of round 4 (braided lane) is in the web UI as the route detail's **Variants** view,
 next to **Stops** (ADR-019). It braids in the other routes of the same search: strands where
 a route shares a vehicle but gets there or home differently, dashed ghosts for other rides
-from the same stations, faded when beaten, tap to open. The per-leg ladder (bike to Geel /
+from the same stations, faded when beaten. Tapping one shows a card with its rides and both
+routes to scale; **Use this route** switches to it. The per-leg ladder (bike to Geel /
 Herentals, bus vs bike to Mol) still needs `/api/variants`.
 

@@ -87,6 +87,8 @@ const state = {
   selected: null,
   // How an open route is shown: 'list' (its stops) or 'braid' (to scale, with its variants).
   detailView: 'list',
+  // The strand or ghost tapped in the braid, shown in a card before you switch to its route.
+  variantPick: null,
   hot: null,
   showAll: false,
   savedId: null,
@@ -620,6 +622,7 @@ function currentDetail() {
 function openSaved(id) {
   state.rideId = null;
   state.savedId = id;
+  state.variantPick = null;
   state.editing = false;
   $('#savedMenu').hidden = true;
   setHot(null);
@@ -1093,10 +1096,13 @@ function segLabel(l, pct) {
   return '';
 }
 
-function stripHTML(j) {
-  const t0 = j.start.getTime();
-  const total = Math.max(j.end.getTime() - t0, 1);
-  return `<div class="strip">${j.legs.map(l => {
+// The route's legs to scale, over the route itself or over `range` ([t0, t1]) to line it up
+// with another route.
+function stripHTML(j, range = null) {
+  const t0 = range ? range[0] : j.start.getTime();
+  const total = Math.max((range ? range[1] : j.end.getTime()) - t0, 1);
+  const line = range ? `<i class="strip-line" style="left:${(((j.start - t0) / total) * 100).toFixed(2)}%;width:${(((j.end - j.start) / total) * 100).toFixed(2)}%"></i>` : '';
+  return `<div class="strip${range ? ' ranged' : ''}">${line}${j.legs.map(l => {
     const left = ((l.dep - t0) / total) * 100;
     const width = Math.max(((l.arr - l.dep) / total) * 100, l.kind === 'walk' ? 0.6 : 1.6);
     return `<span class="seg-b ${l.kind}${l.kmh ? ' fast' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;${blockColors(l)}">${segLabel(l, width)}</span>`;
@@ -1322,6 +1328,7 @@ function openDetail(key) {
   if (!state.byKey.has(key)) return;
   state.selected = key;
   state.savedId = null;
+  state.variantPick = null;
   state.editing = false;
   setHot(null);
   writeHash();
@@ -1431,7 +1438,9 @@ function renderDetail(j) {
   // Keep expanded stop lists open when the same route re-renders after a live refresh.
   const el = $('#detail');
   const open = el.dataset.shown === j.key ? [...el.querySelectorAll('details')].map(d => d.open) : [];
+  if (el.dataset.shown !== j.key) state.variantPick = null;
   el.dataset.shown = j.key;
+  const pick = braided && [...braid.strands, ...braid.ghosts].find(s => s.id === state.variantPick);
   el.innerHTML = `<div class="d-top">${back}
       <span class="d-btns"><button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
       <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button></span></div>
@@ -1443,7 +1452,7 @@ function renderDetail(j) {
       <div class="d-live">${statusHTML(j)} ${liveNote}</div>
       ${views}
     </div>
-    ${braided ? braidHTML(j, braid, el.clientWidth - 32) : `<ol class="tl">${stopsHTML(j)}</ol>`}`;
+    ${braided ? braidHTML(j, braid, el.clientWidth - 32) + (pick ? pickHTML(j, pick) : '') : `<ol class="tl">${stopsHTML(j)}</ol>`}`;
   el.querySelectorAll('details').forEach((d, k) => { if (open[k]) d.open = true; });
 }
 
@@ -1493,7 +1502,8 @@ function stopsHTML(j) {
 // another route gets off one of its vehicles and rejoins it where that route gets back on: the
 // bike to Geel joins the IC at Geel. Routes that share no vehicle but leave from one of its
 // stations show as dashed blocks: the other rides from there. Faded means beaten: you'd leave
-// earlier and get home no sooner. Tapping a strand or a dashed block opens that route.
+// earlier and get home no sooner. Tapping a strand or a dashed block shows it in a card, with a
+// button to switch to its route.
 
 // How far before and after the route a strand may reach, and how close to the route's own
 // departure another ride from the same station has to leave.
@@ -1542,7 +1552,7 @@ function braidOf(j) {
         if (!at) continue;
         // The same ride can start several routes; keep the one that gets you home first.
         const prev = ghosts.get(tripOf(l));
-        if (!prev || o.end < prev.o.end) ghosts.set(tripOf(l), { o, verdict, leg: l, from: l.dep, to: l.arr });
+        if (!prev || o.end < prev.o.end) ghosts.set(tripOf(l), { id: `ghost|${tripOf(l)}`, o, verdict, leg: l, from: l.dep, to: l.arr });
         break;
       }
       continue;
@@ -1577,7 +1587,7 @@ function braidOf(j) {
       const id = [r.type, sig(r.legs), r.join?.stop?.name, r.leave?.stop?.name, t(r.from), t(r.to)].join('|');
       if (seen.has(id)) continue;
       seen.add(id);
-      strands.push({ ...r, o, verdict });
+      strands.push({ ...r, id, o, verdict, runs: runs.length });
     }
   }
   return { strands, ghosts: [...ghosts.values()] };
@@ -1629,6 +1639,7 @@ function braidHTML(j, { strands, ghosts }, width) {
   const MAIN = Math.min(150, W - AX - 12 - (lc + rc) * STEP);
   const shownL = left.filter(s => s.col < lc);
   const shownR = right.filter(s => s.col < rc);
+  const picked = state.variantPick;
   const hidden = left.length + right.length - shownL.length - shownR.length;
 
   const items = [...shownL, ...shownR];
@@ -1725,23 +1736,81 @@ function braidHTML(j, { strands, ghosts }, width) {
     if (s.type === 'before') inner += `<span class="s-cap" style="bottom:${len.toFixed(1)}px">${fmtTime(s.o.start)}</span>`;
     if (s.type === 'after') inner += `<span class="s-cap ${s.verdict}" style="top:${len.toFixed(1)}px">${fmtTime(s.o.end)}</span>`;
     const what = s.legs.filter(l => l.kind !== 'walk' || s.legs.length === 1).map(l => braidLabel(l, nm[s.o.legs.indexOf(l)])).join(', ');
-    const label = `${what}: leave ${fmtTime(s.o.start)}, home ${fmtTime(s.o.end)}. Open this route`;
-    return `<button type="button" class="strand ${s.type} ${s.verdict}" data-variant="${esc(s.o.key)}" style="${box(x, y0, COL, len)}" title="${label}" aria-label="${label}">${inner}</button>`;
+    const label = `${what}: leave ${fmtTime(s.o.start)}, home ${fmtTime(s.o.end)}`;
+    return `<button type="button" class="strand ${s.type} ${s.verdict}${s.id === picked ? ' picked' : ''}" data-pick="${esc(s.id)}" aria-pressed="${s.id === picked}" style="${box(x, y0, COL, len)}" title="${label}" aria-label="${label}">${inner}</button>`;
   };
   const ghostHTML = (g, x) => {
     const y0 = px(+g.from);
     const len = Math.max(px(+g.to) - y0, 24);
-    const label = `${braidLabel(g.leg)} from ${esc(g.leg.stops[0].name)}: home ${fmtTime(g.o.end)}. Open this route`;
-    return `<button type="button" class="ghost ${g.verdict}" data-variant="${esc(g.o.key)}" style="${box(x, y0, COL, len)}--c:${esc(g.leg.route.ui_color || g.leg.route.color || '#555')}" title="${label}" aria-label="${label}">`
+    const label = `${braidLabel(g.leg)} from ${esc(g.leg.stops[0].name)}: home ${fmtTime(g.o.end)}`;
+    return `<button type="button" class="ghost ${g.verdict}${g.id === picked ? ' picked' : ''}" data-pick="${esc(g.id)}" aria-pressed="${g.id === picked}" style="${box(x, y0, COL, len)}--c:${esc(g.leg.route.ui_color || g.leg.route.color || '#555')}" title="${label}" aria-label="${label}">`
       + `<span class="s-lbl">${braidLabel(g.leg, null, len < 60)}</span><span class="s-cap ${g.verdict}" style="top:${len.toFixed(1)}px">${fmtTime(g.o.end)}</span></button>`;
   };
   const side = shownL.map(s => strandHTML(s, leftX(s.col))).join('')
     + shownR.map(s => (s.leg ? ghostHTML(s, rightX(s.col)) : strandHTML(s, rightX(s.col)))).join('');
 
   const note = items.length
-    ? `Strands: other ways to do part of this route. Dashed: other rides from its stations. Faded: you'd leave earlier and get home no sooner. Tap one to open it.${hidden ? ` ${hidden} more don't fit.` : ''}`
+    ? `Strands: other ways to do part of this route. Dashed: other rides from its stations. Faded: you'd leave earlier and get home no sooner. Tap one for its details.${hidden ? ` ${hidden} more don't fit.` : ''}`
     : 'No other route in this search shares a ride or a station with this one. Earlier and later routes you load in the timetable show up here too.';
-  return `<p class="b-note">${note}</p><div class="braid" style="height:${px(t1).toFixed(0)}px">${grid}${main}${side}</div>`;
+  return `<p class="b-note">${note}</p><div class="braid${items.some(i => i.id === picked) ? ' has-pick' : ''}" style="height:${px(t1).toFixed(0)}px">${grid}${main}${side}</div>`;
+}
+
+// The card for a tapped strand or ghost: what it changes about your times, its rides, where it
+// meets your route, both routes to scale on one axis, and the button that switches to it.
+function pickHTML(j, p) {
+  const o = p.o;
+  const nm = legNames(o);
+  const ds = Math.round((o.start - j.start) / MIN);
+  const de = Math.round((o.end - j.end) / MIN);
+  const diff = [ds ? `Leave ${Math.abs(ds)}′ ${ds < 0 ? 'earlier' : 'later'}` : '',
+    de ? `home ${Math.abs(de)}′ ${de < 0 ? 'sooner' : 'later'}` : 'home at the same time'].filter(Boolean).join(' · ');
+  const yours = q => `your ${pill(j.legs[q.k].route)} at ${esc(q.stop.name)}, ${fmtTime(q.t)}`;
+  const what = p.leg ? `Another ride from ${esc(p.leg.stops[0].name)}`
+    : p.type === 'before' ? `Another way to ${esc(p.join.stop.name)}`
+    : p.type === 'between' ? `Another way from ${esc(p.leave.stop.name)} to ${esc(p.join.stop.name)}`
+    : `Another way on from ${esc(p.leave.stop.name)}`;
+  // A ghost's route is all its own from that ride on; a strand is just the part that differs.
+  let legs = (p.leg ? o.legs.slice(o.legs.indexOf(p.leg)) : p.legs).filter(l => isSegment(l, o));
+  if (!legs.length) legs = p.legs;
+  const titles = { bike: 'Bike', scooter: 'Scooter', cab: 'Taxi', walk: 'Walk', other: 'Travel' };
+  const rows = legs.map(l => {
+    const n = nm[o.legs.indexOf(l)];
+    const head = l.kind === 'transit'
+      ? `${icon(l.vehicle)} ${pill(l.route)}${l.headsign ? ` <span>towards ${esc(l.headsign)}</span>` : ''}`
+      : `${icon(l.kind === 'other' ? 'pin' : l.kind)} <b>${l.rental ? esc(l.rental.systemName || l.rental.providerId) : titles[l.kind]}</b>`;
+    const facts = [l.kind !== 'transit' && l.distance ? fmtDist(l.distance) : '', fmtDur(l.dur), l.kind === 'transit' ? liveLabel(l) : '', l.kind === 'transit' ? trackHTML(l) : ''].filter(Boolean).join(' · ');
+    const dep = l.kind === 'transit' ? depTimeHTML(l) : `<time>${fmtTime(l.dep)}</time>`;
+    return `<li style="--c:${esc(legColor(l))}"><div class="p-l1">${head}</div>
+      <div class="p-l2">${dep} ${esc(n.from || '')} → <time>${fmtTime(l.arr)}</time> ${esc(n.to || '')}</div><div class="p-l3">${facts}</div></li>`;
+  }).join('');
+  const note = p.leg ? 'Shares none of your rides.' : p.runs > 1 ? 'This route differs from yours elsewhere too.' : '';
+  const range = [Math.min(+o.start, +j.start), Math.max(+o.end, +j.end)];
+  return `<section class="b-pick" aria-label="Variant details">
+    <div class="p-head"><span>${what}</span><button type="button" class="icon-btn" data-action="pick-close" aria-label="Close">×</button></div>
+    <div class="card-head">${timesHTML(o)}<span class="dur">${fmtDur(o.duration)}</span></div>
+    <div class="p-diff ${p.verdict}">${diff} ${statusHTML(o)}</div>
+    ${p.leave ? `<p class="p-meet">Off ${yours(p.leave)}</p>` : ''}
+    <ol class="p-legs">${rows}</ol>
+    ${p.join ? `<p class="p-meet">Then on ${yours(p.join)}</p>` : ''}
+    ${note ? `<p class="p-note">${note}</p>` : ''}
+    <div class="p-cmp"><span>This</span>${stripHTML(o, range)}<span>Yours</span>${stripHTML(j, range)}</div>
+    <button type="button" class="p-use" data-variant="${esc(o.key)}">Use this route</button></section>`;
+}
+
+// Shows a tapped strand or ghost in its card (null closes it), keeping the block in sight above it.
+function pickVariant(id) {
+  state.variantPick = id;
+  const j = currentDetail();
+  if (!j) return;
+  renderDetail(j);
+  const el = $('#detail');
+  const block = el.querySelector('.braid .picked');
+  const card = el.querySelector('.b-pick');
+  if (!block || !card) return;
+  const b = block.getBoundingClientRect();
+  const over = b.bottom + 12 - card.getBoundingClientRect().top;
+  if (over > 0) el.scrollTop += Math.min(over, b.top - el.getBoundingClientRect().top - 12);
+  card.querySelector('.p-use').focus({ preventScroll: true });
 }
 
 // ---------- ride mode ----------
@@ -2065,7 +2134,10 @@ document.addEventListener('click', e => {
     return;
   }
   const show = t.closest('button[data-show]');
-  if (show) { state.detailView = show.dataset.show; writeHash(); render(); return; }
+  if (show) { state.detailView = show.dataset.show; state.variantPick = null; writeHash(); render(); return; }
+  const pick = t.closest('[data-pick]');
+  if (pick) { pickVariant(pick.dataset.pick === state.variantPick ? null : pick.dataset.pick); return; }
+  if (state.variantPick && (t.closest('.braid') || t.closest('[data-action="pick-close"]'))) { pickVariant(null); return; }
   const variant = t.closest('[data-variant]');
   if (variant) { openDetail(variant.dataset.variant); return; }
   const route = t.closest('[data-key]');
@@ -2212,6 +2284,8 @@ timeInput.addEventListener('change', () => { state.time = timeInput.value; if (s
 
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && currentDetail() && !e.target.closest('input')) {
+    // First closes an open variant card, then the route.
+    if (state.variantPick) { pickVariant(null); return; }
     if (state.savedId) state.savedId = null; else state.selected = null;
     writeHash();
     render();

@@ -437,6 +437,39 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .s-cap { position: absolute; left: -10px; right: -10px; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 14px; color: var(--muted); }
 .s-cap.better { color: var(--ok); }
 
+/* A tapped strand stands out; its card sticks to the bottom of the panel until you close it or switch. */
+.braid.has-pick :is(.strand, .ghost):not(.picked) { opacity: .3; }
+.strand.picked, .ghost.picked { z-index: 3; opacity: 1; }
+.strand.picked :is(.bb:not(.walk), .bb.wide), .ghost.picked { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink); }
+.b-pick { position: sticky; bottom: -24px; z-index: 5; max-height: 60vh; overflow-y: auto; margin: 4px -16px -24px; padding: 8px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -8px 20px rgba(0, 0, 0, .12); }
+.p-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.p-head .icon-btn { width: 32px; height: 32px; margin-right: -8px; }
+.b-pick .card-head .tt { font-size: 20px; }
+.p-diff { font-size: 13.5px; font-weight: 650; color: var(--muted); }
+.p-diff.better { color: var(--ok); }
+.p-diff.trade { color: var(--ink); }
+.p-meet, .p-note { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.p-legs { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.p-legs li { border-left: 4px solid var(--c); padding-left: 9px; }
+.p-l1 { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
+.p-l1 .i { width: 16px; height: 16px; flex: none; }
+.p-l1 span:not(.pill) { overflow: hidden; color: var(--muted); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.p-l2 { margin-top: 2px; font-size: 13.5px; }
+.p-l2 time { font-weight: 650; font-variant-numeric: tabular-nums; }
+.p-l2 time.late { color: var(--delay); }
+.p-l2 time.cancel { color: var(--danger); }
+.p-l2 time s { margin-left: 4px; color: var(--muted); font-weight: 400; }
+.p-l3 { color: var(--muted); font-size: 12.5px; }
+.p-l3 .trk { margin: 0; font-size: 11.5px; line-height: 16px; }
+.p-cmp { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 5px 8px; margin-top: 12px; color: var(--muted); font-size: 11.5px; font-weight: 650; }
+.p-cmp .strip { height: 18px; margin: 0; }
+.p-cmp .seg-b { font-size: 11px; }
+.p-cmp .seg-b.walk { top: 7px; bottom: 7px; }
+.strip.ranged { background: none; }
+.strip-line { position: absolute; top: 8px; height: 2px; background: repeating-linear-gradient(90deg, var(--line) 0 3px, transparent 3px 7px); }
+.p-use { display: block; width: 100%; margin-top: 12px; border: 0; border-radius: 12px; padding: 12px; background: var(--ink); color: var(--panel); font: inherit; font-weight: 700; cursor: pointer; }
+.p-use:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 /* ---------- map bits ---------- */
 .pin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .pin.from { background: var(--from); }

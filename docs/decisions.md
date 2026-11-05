@@ -338,8 +338,11 @@ with no new API:
   need be (a tick on the lane). Getting-there strands go left, the rest right.
 - **Ghosts** come from routes sharing no vehicle: their first ride from a station the open
   route also leaves from, within 90 min, as a dashed block with its home time.
-- Each strand or ghost belongs to one real route; tapping it opens that route (still as
-  Variants). A route that differs in one place only is preferred as that strand's target.
+- Each strand or ghost belongs to one real route. Tapping it first shows a card (user,
+  2026-11-05: details before slotting it in): how it changes your leave and home times, its
+  rides, where it gets off or back on yours, and both routes to scale on one axis. **Use this
+  route** then opens that route (still as Variants). A route that differs in one place only
+  is preferred as that strand's target.
 - Faded = beaten: leaves no later and gets home no sooner, with ±2 min counting as the same.
 - On a phone the map hides in this view (the lane needs the height); Stops brings it back.
 - Changes show the time they give you; orange when that is all "walking", because MOTIS
