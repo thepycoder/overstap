@@ -10,7 +10,6 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Find Transitous Belgian feed definitions → `docs/data-sources.md`
 - [x] Verify GBFS per operator (Blue-bike, Velo, Donkey, Dott all public)
 - [ ] Register a `bmc-partner-key` on the Belgian Mobility portal (De Lijn/TEC/STIB) in case anonymous access closes
-- [ ] Find Donkey Republic Mechelen feed (bikes appear under `donkey_antwerp`; confirm coverage)
 - [ ] **GTFS-RT logger** (ADR-006): poll NMBS + De Lijn RT every 30–60 s, store raw protobuf + parsed delays. Run on an always-on box
 
 ## Phase 1 — MOTIS running
@@ -22,12 +21,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Pick a permanent host (homelab/VPS; 2 GB RAM serving is enough, ~4 GB import)
 - [ ] Enable tiles for the web UI
 - [ ] Nightly re-import (GTFS changes daily)
-- [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
-- [x] Hoppy Kempen as a generated static GBFS feed (`tools/hoppy_gbfs.py`, ADR-011)
-- [ ] Hoppy: ask Hoppy / IOK (Vervoerregio Kempen) for a public GBFS feed with live availability
-- [ ] Hoppy: the 17 Kempen zones not in the Hoppinpunt data (hand-curated list?)
-- [ ] Hoppy: other regions (Vlaamse Ardennen, Dender, Midwest, Brugge, …) once their rules are checked
-- [ ] E-bike speed: MOTIS uses ~15 km/h for every rental; re-time `ELECTRIC_ASSIST` legs (≈20 km/h) in overstap
+- [ ] Add TEC, STIB
+- [~] Shared mobility coverage (bikes, steps, mopeds) → **`TODO-sharing.md`**, one entry per operator/region
 
 ## Phase 2 — Orchestration MVP (Rust)
 

@@ -141,3 +141,29 @@ reads it from a local directory (a non-HTTP `url` in `config.yml`).
   legs come out ~25 % slower than reality — conservative.
 - Hubs missing from the Hoppinpunt data (17 of 95 in Kempen) are invisible.
 - Replace with a real feed as soon as Hoppy or IOK publishes one.
+
+---
+
+## ADR-012 — Shared-mobility coverage: scope and order
+*2026-11-05 · accepted*
+
+**Context.** Five GBFS feeds plus a static Hoppy Kempen feed cover a fraction of
+Flanders. Every vervoerregio now tenders shared bikes at Hoppinpunten, and each city
+issues its own permits for free-floating bikes, steps and mopeds. Brussels annulled its
+free-floating permits (Raad van State, 29 Jul 2026), keeps bikes under a transition
+regime until May 2028, and bans steps from 1 Jan 2027.
+
+**Decision.** Track every candidate in `TODO-sharing.md` and work through it in this order:
+1. Regional Hoppin networks (Donkey, Blue-bike, Hoppy, Mobit, nextbike). They sit at
+   stations and bus hubs, which is where overstap changes mode. Live GBFS where it
+   exists, static from Hoppinpunt hubs otherwise (ADR-011).
+2. City permits in Flemish centrumsteden: free-floating bikes, steps and mopeds.
+3. Brussels docked and free-floating bikes and mopeds; **not** Brussels steps.
+
+Out of scope: Wallonia and car sharing. Completeness is measured with the Hoppinpunt
+operator data (coverage checker, TODO-sharing A0), not by feed count.
+
+**Consequences.**
+- Feed-less operators give "bike probably there" answers until they publish GBFS.
+- More form factors (steps, mopeds, cargo bikes) need rider preferences and a speed per
+  form factor in overstap (TODO-sharing E4/E5).

@@ -11,7 +11,7 @@ a folding bike and walking; re-plans live when delayed or stranded.
   overshot/aboard-trip origin (`overshoot.rs`), hub-only and round-trip bike-share fixes (`lastmile.rs`),
   delay simulation. CLI: `overstap plan|overshot|geocode|health`, `MOTIS_URL` env var.
 - Read first: `docs/design.md`, `docs/decisions.md` (ADRs — add one for every real decision),
-  `docs/data-sources.md`, `TODO.md`, `docs/ui-concepts.md`.
+  `docs/data-sources.md`, `TODO.md`, `TODO-sharing.md` (shared-mobility coverage), `docs/ui-concepts.md`.
 
 ## Working rules
 - Run `cargo test` with MOTIS up (`MOTIS_URL=http://localhost:8080`); e2e tests skip when it's down.
