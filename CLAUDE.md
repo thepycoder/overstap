@@ -14,7 +14,8 @@ a folding bike and walking; re-plans live when delayed or stranded.
 - **Web UI** (`web/`, vanilla JS + Leaflet, no build step) served by `overstap serve` (`server.rs`,
   tiny_http, port 8737). Ported from the user's earlier Citymapper-based app (laptop
   `~/Projects/bike-transit`). The API passes MOTIS itineraries through; `web/app.js` `normLeg()`
-  is the only adapter (ADR-012). Ride mode (`renderRide`, `/api/ride` for plan B) in the same files.
+  is the only adapter (ADR-012). Ride mode (`renderRide`, `/api/ride` for plan B) in the same files,
+  and the route detail's Variants view (braided lane, `braidOf`/`braidHTML`, ADR-019).
 - **RT logger**: `overstap rt-log` → SQLite (`rtlog.rs`, hand-written prost types in `gtfs_rt.rs`), `rt-report`.
 - **Deploy**: `deploy/motis/update.sh` (nightly refresh + swap + rollback), `run.sh` (supervisor);
   `Dockerfile` + `deploy/nas/compose.yaml` (motis, overstap, rtlog), image built by `.github/workflows/image.yml`.

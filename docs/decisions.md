@@ -317,3 +317,37 @@ two stations, and not taken back from the destination. No locking time at the st
 for the "here" case, and the 25 km/h fast-rider search only runs for the folding bike.
 Moving the bike happens when you start a ride, not when you actually travel: change it by
 hand if you didn't go.
+
+## ADR-019 — Variants of a route: braided from the search's own results first
+*2026-11-05 · accepted*
+
+**Context.** The brainstorm's "Variations of one route" (canvas board 1, braided lane) asks
+what else you could do around a chosen route: reach the same train another way, take the
+next one, end on a Donkey instead of a Blue-bike. The full version needs new backend work
+(per-leg alternatives: ride or bus to each stop of the chosen train, adjacent departures,
+dominance pruning). But a search already returns many routes that overlap the chosen one,
+and the Shared tab's last-mile variants are separate routes too.
+
+**Decision.** The route detail gets a second view, **Variants** (`view=braid` in the URL),
+next to the stop list. It is built in the page from `state.journeys` (shown and beaten),
+with no new API:
+- **Strands** come from routes sharing at least one vehicle (`tripId`) with the open route.
+  Wherever they differ, before the first shared ride, between two, or after the last,
+  that stretch is drawn in a column beside the lane. It leaves the lane where that route
+  gets off a shared ride and rejoins it where it gets back on, at an intermediate stop if
+  need be (a tick on the lane). Getting-there strands go left, the rest right.
+- **Ghosts** come from routes sharing no vehicle: their first ride from a station the open
+  route also leaves from, within 90 min, as a dashed block with its home time.
+- Each strand or ghost belongs to one real route; tapping it opens that route (still as
+  Variants). A route that differs in one place only is preferred as that strand's target.
+- Faded = beaten: leaves no later and gets home no sooner, with ±2 min counting as the same.
+- On a phone the map hides in this view (the lane needs the height); Stops brings it back.
+- Changes show the time they give you; orange when that is all "walking", because MOTIS
+  pads a change to the station's minimum transfer time with a 0 m walk.
+
+**Consequences.** What you see depends on what MOTIS returned. Real Retie → Lokeren
+searches give other trains at Mol and Berchem (ghosts), the Tielen/Lier route joining
+the same S34, and on the Shared tab the last-mile choice (Blue-bike / Donkey / walk).
+They do not give the ride-to-Geel/Herentals ladder or the bus-vs-bike-to-Mol choice from
+the mockup: that needs the backend step (`/api/variants`, per-leg alternatives), which can
+feed the same view later. Loading earlier or later routes in the timetable adds variants.

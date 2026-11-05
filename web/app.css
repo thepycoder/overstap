@@ -227,11 +227,11 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .seg-b { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 3px; border-radius: 5px; overflow: hidden; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--seg-outline); }
 .seg-b .i { width: 14px; height: 14px; }
 
-:is(.seg-b, .blk).bike { background: var(--accent); color: var(--accent-ink); }
-:is(.seg-b, .blk).bike.fast { background: var(--fast); color: var(--fast-ink); }
-:is(.seg-b, .blk).scooter { background: var(--scooter); color: #fff; }
-:is(.seg-b, .blk).cab { background: var(--cab); color: #1b1300; }
-:is(.seg-b, .blk).other { background: var(--faint); color: #fff; }
+:is(.seg-b, .blk, .bb).bike { background: var(--accent); color: var(--accent-ink); }
+:is(.seg-b, .blk, .bb).bike.fast { background: var(--fast); color: var(--fast-ink); }
+:is(.seg-b, .blk, .bb).scooter { background: var(--scooter); color: #fff; }
+:is(.seg-b, .blk, .bb).cab { background: var(--cab); color: #1b1300; }
+:is(.seg-b, .blk, .bb).other { background: var(--faint); color: #fff; }
 .seg-b.walk { top: 8px; bottom: 8px; background: var(--walk); opacity: .55; box-shadow: none; }
 
 .d-chips { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13.5px; }
@@ -392,6 +392,51 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .stops li { display: flex; gap: 10px; color: var(--muted); }
 .stops li time { font-weight: 500; min-width: 38px; text-align: left; font-size: 13px; }
 
+/* ---------- variants: the braided lane ---------- */
+.d-view { margin-top: 12px; }
+.d-view button { padding: 6px 16px; }
+.d-view .count { display: inline-block; min-width: 18px; border-radius: 9px; padding: 0 5px; background: var(--line); color: var(--ink); font-size: 11.5px; line-height: 18px; text-align: center; }
+.b-note { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.braid { position: relative; margin-bottom: 8px; }
+.b-gl { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--line); opacity: .6; }
+.b-gl.hour { opacity: 1; }
+.b-gl span { position: absolute; left: 0; top: -8px; padding-right: 4px; background: var(--panel); color: var(--muted); font-size: 11px; line-height: 15px; }
+.b-gl.hour span { color: var(--ink); font-weight: 650; }
+.bb { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 1px; overflow: hidden; border-radius: 7px; padding: 3px 6px; font-size: 11.5px; line-height: 14px; box-shadow: inset 0 0 0 1px var(--seg-outline); }
+.bb .l1 { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.bb .l1 b { font-weight: 750; }
+.bb .l2 { opacity: .88; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb .i { width: 13px; height: 13px; flex: none; }
+.bb .dly { font-style: normal; font-size: 10.5px; font-weight: 800; color: #1b1300; background: var(--delay); border-radius: 4px; padding: 0 3px; }
+.bb.walk { padding: 0; border-radius: 4px; background: var(--walk); opacity: .55; box-shadow: none; }
+.bb.walk.wide { opacity: 1; background: var(--panel-2); border: 1.5px dotted var(--walk); color: var(--muted); }
+.bb.cancelled { opacity: .5; background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .35) 0 4px, transparent 4px 9px); }
+.b-tick { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid currentColor; opacity: .75; }
+.b-tick span { position: absolute; left: 6px; top: 1px; font-size: 10px; font-style: normal; white-space: nowrap; }
+.b-wait { position: absolute; width: 0; border-left: 2px dotted var(--faint); }
+.b-spare { position: absolute; z-index: 2; font-size: 11.5px; font-weight: 750; line-height: 14px; }
+.b-spare.ok { color: var(--ok); }
+.b-spare.tight { color: var(--delay); }
+.b-spare.bad { color: var(--danger); }
+.b-cap { position: absolute; text-align: center; font-size: 14px; font-weight: 800; line-height: 15px; }
+.b-cap.dly { color: var(--delay); }
+
+/* A strand is one tappable column; its links to the lane hang out of it. */
+.strand, .ghost { position: absolute; z-index: 2; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 7px; }
+.strand:focus-visible, .ghost:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.strand:hover .bb:not(.walk), .ghost:hover { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ink); }
+.strand.worse, .ghost.worse { opacity: .42; }
+.s-lbl { display: block; writing-mode: vertical-rl; margin: 0 auto; max-height: calc(100% - 4px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 10.5px; font-weight: 700; line-height: 18px; }
+.strand .bb { padding: 4px 0; }
+.ghost { box-sizing: border-box; border: 1.5px dashed var(--c); background: color-mix(in srgb, var(--c) 8%, var(--panel)); color: var(--ink); padding: 4px 0; }
+.ghost .s-lbl { font-weight: 600; }
+.b-conn { position: absolute; height: 0; border-top: 2px dashed var(--faint); }
+.b-conn::after { content: ""; position: absolute; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--panel); border: 2px solid var(--ink); box-sizing: border-box; }
+.b-conn.in::after { right: -4px; }
+.b-conn.out::after { left: -4px; }
+.s-cap { position: absolute; left: -10px; right: -10px; text-align: center; font-size: 10.5px; font-weight: 700; line-height: 14px; color: var(--muted); }
+.s-cap.better { color: var(--ok); }
+
 /* ---------- map bits ---------- */
 .pin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .pin.from { background: var(--from); }
@@ -438,6 +483,8 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
   body[data-mode="detail"] .stage { display: flex; flex-direction: column; }
   body[data-mode="detail"] #map { position: relative; inset: auto; flex: none; height: 40vh; }
   body[data-mode="detail"] .detail { position: relative; inset: auto; flex: 1; width: auto; border: 0; border-radius: 0; box-shadow: none; }
+  /* The braided lane needs the height; the map is one tap away (Stops). */
+  body[data-mode="detail"][data-dview="braid"] #map { display: none; }
 }
 
 /* overstap additions */

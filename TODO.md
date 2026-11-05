@@ -71,7 +71,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Show rental availability (bikes at pickup, docks at drop-off) on rental blocks
 - [ ] "Open in app" links for rentals (MOTIS gives `rentalUriAndroid/IOS`)
 - [ ] Lane detail via one corridor vs another (canvas "Two corridors" D/E): group or tint lanes by corridor
-- [ ] Alternatives for a selected route (canvas round 4): per-leg variants, using MOTIS `numLegAlternatives`
+- [x] Variants view of a route (canvas round 4, braided lane) from the search's own results (ADR-019)
+- [ ] `/api/variants`: per-leg alternatives for the braided lane (ride/bus to each stop of the chosen train, adjacent departures per leg, dominance pruning; maybe MOTIS `numLegAlternatives`)
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
 - [x] Ride mode v0: next move + countdown, strip to arrival, spare bars per change, plan B per change, bikes at pickup, alerts on changed facts (ADR-016)

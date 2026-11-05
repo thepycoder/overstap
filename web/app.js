@@ -85,6 +85,8 @@ const state = {
   updatedAt: null,
   seq: 0,
   selected: null,
+  // How an open route is shown: 'list' (its stops) or 'braid' (to scale, with its variants).
+  detailView: 'list',
   hot: null,
   showAll: false,
   savedId: null,
@@ -329,11 +331,15 @@ function layout(j) {
   j.atRisk = j.transit.some(l => l.atRisk);
 }
 
+// The vehicle a ride is on: its trip, or its line and timetable departure when MOTIS has no trip.
+const tripOf = l => l.tripId || `${l.route.id}@${Math.round(l.schedDep / MIN)}`;
+const legPart = l => (l.kind === 'transit' ? tripOf(l) : l.rental ? `${l.kind}:${l.rental.providerId}` : l.kind);
+
 // One key per real option: the same vehicles reached the same way, whichever search found it.
 function journeyKey(j, tab) {
   const parts = [];
   for (const l of j.legs) {
-    const p = l.kind === 'transit' ? (l.tripId || `${l.route.id}@${Math.round(l.schedDep / MIN)}`) : l.rental ? `${l.kind}:${l.rental.providerId}` : l.kind;
+    const p = legPart(l);
     if (parts[parts.length - 1] !== p) parts.push(p);
   }
   if (!j.transit.length) parts.push(Math.round(j.start / MIN));
@@ -637,6 +643,7 @@ function writeHash() {
   if (state.rideId) p.set('ride', state.rideId);
   else if (state.savedId) p.set('saved', state.savedId);
   else if (state.selected || state.pendingRoute) p.set('route', state.selected || state.pendingRoute);
+  if (!state.rideId && state.detailView === 'braid' && (p.has('saved') || p.has('route'))) p.set('view', 'braid');
   history.replaceState(null, '', p.toString() ? '#' + p.toString() : location.pathname);
 }
 
@@ -654,6 +661,7 @@ function readHash() {
   state.time = state.timeMode === 'now' ? '' : p.get('t');
   state.savedId = savedEntries().some(s => s.id === p.get('saved')) ? p.get('saved') : null;
   state.pendingRoute = p.get('route');
+  state.detailView = p.get('view') === 'braid' ? 'braid' : 'list';
   state.rideId = savedEntries().some(s => s.id === p.get('ride')) ? p.get('ride') : null;
 }
 
@@ -944,7 +952,7 @@ function render() {
   const mode = riding ? 'ride' : open ? 'detail' : !state.from || !state.to ? 'idle' : 'results';
   const stage = mode === 'results' ? 'schedule' : 'map';
   if (mode !== 'results') setHeader(true);
-  Object.assign(document.body.dataset, { mode, stage });
+  Object.assign(document.body.dataset, { mode, stage, dview: state.detailView });
   document.body.classList.toggle('editing', state.editing);
 
   renderSummary();
@@ -1406,9 +1414,43 @@ function gapHTML(prev, next, walkSec) {
 const isSegment = (l, j) => l.kind !== 'walk' || (!j.ownBike && !l.transfer && l.dur >= 5 * 60);
 
 function renderDetail(j) {
+  const f = j.saved ? null : journeyFlags(shownJourneys()).get(j.key);
+  const braid = braidOf(j);
+  const braided = state.detailView === 'braid';
+  const saved = isSaved(j.key);
+  const hasLive = j.transit.some(l => l.live?.isLive);
+  const liveNote = hasLive
+    ? `<span class="live-dot"></span>Live times · updated ${fmtTime(j.liveAt)}`
+    : 'Timetable times · live times appear closer to departure';
+  const back = `<button type="button" class="back" data-action="back">${icon('back')} ${j.saved ? 'Back' : 'Schedule'}</button>`;
+  const variants = braid.strands.length + braid.ghosts.length;
+  const views = `<div class="seg d-view" role="group" aria-label="Show this route as">
+      <button type="button" data-show="list" aria-pressed="${!braided}">Stops</button>
+      <button type="button" data-show="braid" aria-pressed="${braided}">Variants${variants ? ` <span class="count">${variants}</span>` : ''}</button></div>`;
+
+  // Keep expanded stop lists open when the same route re-renders after a live refresh.
+  const el = $('#detail');
+  const open = el.dataset.shown === j.key ? [...el.querySelectorAll('details')].map(d => d.open) : [];
+  el.dataset.shown = j.key;
+  el.innerHTML = `<div class="d-top">${back}
+      <span class="d-btns"><button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
+      <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button></span></div>
+    <div class="d-head">
+      ${j.saved ? `<div class="d-route">${esc(dayLabel(j.start))}${esc(j.from.name)} → ${esc(j.to.name)}</div>` : ''}
+      <div class="card-head">${timesHTML(j, f)}<span class="dur">${fmtDur(j.duration)}</span></div>
+      ${braided ? '' : `${stripHTML(j)}<div class="d-chips">${metaHTML(j)}</div>`}
+      ${j.notes.length ? `<ul class="d-notes">${j.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      <div class="d-live">${statusHTML(j)} ${liveNote}</div>
+      ${views}
+    </div>
+    ${braided ? braidHTML(j, braid, el.clientWidth - 32) : `<ol class="tl">${stopsHTML(j)}</ol>`}`;
+  el.querySelectorAll('details').forEach((d, k) => { if (open[k]) d.open = true; });
+}
+
+// The route as a list: a bubble per place, its rides between them, the time you have at each change.
+function stopsHTML(j) {
   const names = legNames(j);
   const legs = j.legs;
-  const f = j.saved ? null : journeyFlags(shownJourneys()).get(j.key);
   let segs = legs.map((l, k) => ({ l, k })).filter(({ l }) => isSegment(l, j));
   if (!segs.length) segs = legs.map((l, k) => ({ l, k }));
   const walked = (from, to) => sum(legs.slice(from, to).map(l => l.dur));
@@ -1441,31 +1483,265 @@ function renderDetail(j) {
     rows.push(gapHTML(last.l, { dep: j.end, kind: 'destination' }, walked(last.k + 1, legs.length)));
     rows.push(stopHTML({ side: 'start', cls: 'destination', time: j.end, timeCls: j.delay >= 1 ? 'late' : '', name: j.to.name, sub: j.to.address }));
   }
+  return rows.join('');
+}
 
-  const saved = isSaved(j.key);
-  const hasLive = j.transit.some(l => l.live?.isLive);
-  const liveNote = hasLive
-    ? `<span class="live-dot"></span>Live times · updated ${fmtTime(j.liveAt)}`
-    : 'Timetable times · live times appear closer to departure';
-  const back = `<button type="button" class="back" data-action="back">${icon('back')} ${j.saved ? 'Back' : 'Schedule'}</button>`;
+// ---------- variants: the braided lane ----------
+//
+// The open route as one lane, to scale, with the other routes of this search braided in where
+// they differ from it (canvas "Variations of one route", board 1). A strand leaves the lane where
+// another route gets off one of its vehicles and rejoins it where that route gets back on: the
+// bike to Geel joins the IC at Geel. Routes that share no vehicle but leave from one of its
+// stations show as dashed blocks: the other rides from there. Faded means beaten: you'd leave
+// earlier and get home no sooner. Tapping a strand or a dashed block opens that route.
 
-  // Keep expanded stop lists open when the same route re-renders after a live refresh.
-  const el = $('#detail');
-  const open = el.dataset.shown === j.key ? [...el.querySelectorAll('details')].map(d => d.open) : [];
-  el.dataset.shown = j.key;
-  el.innerHTML = `<div class="d-top">${back}
-      <span class="d-btns"><button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
-      <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button></span></div>
-    <div class="d-head">
-      ${j.saved ? `<div class="d-route">${esc(dayLabel(j.start))}${esc(j.from.name)} → ${esc(j.to.name)}</div>` : ''}
-      <div class="card-head">${timesHTML(j, f)}<span class="dur">${fmtDur(j.duration)}</span></div>
-      ${stripHTML(j)}
-      <div class="d-chips">${metaHTML(j)}</div>
-      ${j.notes.length ? `<ul class="d-notes">${j.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
-      <div class="d-live">${statusHTML(j)} ${liveNote}</div>
-    </div>
-    <ol class="tl">${rows.join('')}</ol>`;
-  el.querySelectorAll('details').forEach((d, k) => { if (open[k]) d.open = true; });
+// How far before and after the route a strand may reach, and how close to the route's own
+// departure another ride from the same station has to leave.
+const BRAID_BEFORE = 75 * MIN;
+const BRAID_AFTER = 100 * MIN;
+const BRAID_GHOST = 90 * MIN;
+const sameStop = (a, b) => !!a?.name && a.name.toLowerCase() === (b?.name || '').toLowerCase();
+
+// The other routes of the current search; a saved route from another search has none.
+function braidPool(j) {
+  if (j.saved && !(j.tab === state.tab && samePlace(j.from, state.from) && samePlace(j.to, state.to))) return [];
+  return state.journeys.filter(o => o.key !== j.key && o.transit.length && !o.cancelled && !o.atRisk);
+}
+
+// 'worse': leave no later and get home no sooner; 'better': the reverse; 'trade': one of each.
+// A couple of minutes either way is the same (a Donkey a minute slower than the Blue-bike isn't beaten).
+const BRAID_SAME = 2;
+function verdictOf(o, j) {
+  const t = d => Math.round(+d / MIN);
+  const near = m => (Math.abs(m) <= BRAID_SAME ? 0 : m);
+  const ds = near(t(o.start) - t(j.start));
+  const de = near(t(o.end) - t(j.end));
+  if (ds <= 0 && de >= 0 && (ds || de)) return 'worse';
+  if (ds >= 0 && de <= 0 && (ds || de)) return 'better';
+  return ds || de ? 'trade' : 'same';
+}
+
+// Where the other routes differ from j. Strands come from routes sharing at least one vehicle
+// with j: what they do before the first shared ride, between two, and after the last, wherever
+// that isn't what j does. Ghosts come from routes sharing none: their first ride from a station
+// j leaves from. Each strand or ghost keeps its route `o`, the one to switch to.
+function braidOf(j) {
+  const mine = new Map();
+  j.legs.forEach((l, k) => { if (l.kind === 'transit') mine.set(tripOf(l), k); });
+  const sig = legs => legs.filter(l => l.kind !== 'walk').map(legPart).join('>');
+  const t = d => Math.round(+d / MIN);
+  const found = [];
+  const ghosts = new Map();
+  for (const o of braidPool(j)) {
+    const verdict = verdictOf(o, j);
+    const shared = [];
+    o.legs.forEach((l, k) => { if (l.kind === 'transit' && mine.has(tripOf(l))) shared.push(k); });
+    if (!shared.length) {
+      for (const l of o.transit) {
+        const at = j.transit.find(m => sameStop(m.stops[0], l.stops[0]) && Math.abs(l.dep - m.dep) <= BRAID_GHOST);
+        if (!at) continue;
+        // The same ride can start several routes; keep the one that gets you home first.
+        const prev = ghosts.get(tripOf(l));
+        if (!prev || o.end < prev.o.end) ghosts.set(tripOf(l), { o, verdict, leg: l, from: l.dep, to: l.arr });
+        break;
+      }
+      continue;
+    }
+    const jk = shared.map(k => mine.get(tripOf(o.legs[k])));
+    if (jk.some((k, i) => i && k <= jk[i - 1])) continue;
+    const runs = [];
+    const first = o.legs[shared[0]];
+    if (sig(o.legs.slice(0, shared[0])) !== sig(j.legs.slice(0, jk[0])) || !sameStop(first.stops[0], j.legs[jk[0]].stops[0])) {
+      runs.push({ type: 'before', legs: o.legs.slice(0, shared[0]), from: o.start, to: first.dep, join: { k: jk[0], t: first.dep, stop: first.stops[0] } });
+    }
+    for (let i = 1; i < shared.length; i++) {
+      const a = o.legs[shared[i - 1]];
+      const b = o.legs[shared[i]];
+      const legs = o.legs.slice(shared[i - 1] + 1, shared[i]);
+      if (sig(legs) === sig(j.legs.slice(jk[i - 1] + 1, jk[i])) && sameStop(a.stops.at(-1), j.legs[jk[i - 1]].stops.at(-1)) && sameStop(b.stops[0], j.legs[jk[i]].stops[0])) continue;
+      runs.push({ type: 'between', legs, from: a.arr, to: b.dep, leave: { k: jk[i - 1], t: a.arr, stop: a.stops.at(-1) }, join: { k: jk[i], t: b.dep, stop: b.stops[0] } });
+    }
+    const last = o.legs[shared.at(-1)];
+    if (sig(o.legs.slice(shared.at(-1) + 1)) !== sig(j.legs.slice(jk.at(-1) + 1)) || !sameStop(last.stops.at(-1), j.legs[jk.at(-1)].stops.at(-1))) {
+      runs.push({ type: 'after', legs: o.legs.slice(shared.at(-1) + 1), from: last.arr, to: o.end, leave: { k: jk.at(-1), t: last.arr, stop: last.stops.at(-1) } });
+    }
+    found.push({ o, verdict, runs });
+  }
+  // A route that differs from j in one place only is the one to switch to for that difference.
+  found.sort((a, b) => a.runs.length - b.runs.length || a.o.end - b.o.end);
+  const seen = new Set();
+  const strands = [];
+  for (const { o, verdict, runs } of found) {
+    for (const r of runs) {
+      if (!r.legs.length || r.to - r.from < MIN || r.from < j.start - BRAID_BEFORE || r.to > +j.end + BRAID_AFTER) continue;
+      const id = [r.type, sig(r.legs), r.join?.stop?.name, r.leave?.stop?.name, t(r.from), t(r.to)].join('|');
+      if (seen.has(id)) continue;
+      seen.add(id);
+      strands.push({ ...r, o, verdict });
+    }
+  }
+  return { strands, ghosts: [...ghosts.values()] };
+}
+
+const box = (x, y, w, h) => `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;`;
+
+// What a block in the braid says: the line and when it leaves, or the mode, how long and where
+// to. `short` keeps just what fits a small block.
+function braidLabel(l, nm, short = false) {
+  if (l.kind === 'transit') return short ? esc(l.route.display_name || '') : `${esc(l.route.display_name || '')} ${fmtTime(l.dep)}`;
+  if (short) return shortDur(l.dur);
+  const what = l.rental ? esc(l.rental.systemName || l.rental.providerId) : { bike: 'Bike', scooter: 'Scooter', cab: 'Taxi', walk: 'Walk', other: 'Travel' }[l.kind];
+  return `${what} ${shortDur(l.dur)}${nm?.to ? ` → ${esc(nm.to)}` : ''}`;
+}
+
+function braidHTML(j, { strands, ghosts }, width) {
+  const W = Math.max(300, width || 358);
+  const AX = 36;
+  const MIN_MAIN = 92;
+  const COL = 30;
+  const STEP = 36;
+  const ppm = Math.min(6, Math.max(2, 520 / ((j.end - j.start) / MIN + 20)));
+  const pad = px => (px / ppm) * MIN;
+
+  // Strands that bring you to the route go left of it, the rest right; each side packs them
+  // into columns like the timetable packs routes into lanes, with room for their captions.
+  const pack = (items, above, below) => {
+    const cols = [];
+    for (const it of items) {
+      const a = +it.from - pad(above);
+      const b = +it.to + pad(below);
+      let c = cols.findIndex(col => col.every(([x, y]) => b <= x || a >= y));
+      if (c === -1) { c = cols.length; cols.push([]); }
+      cols[c].push([a, b]);
+      it.col = c;
+    }
+    return cols.length;
+  };
+  const order = (a, b) => (a.verdict === 'worse') - (b.verdict === 'worse') || a.from - b.from;
+  const left = strands.filter(s => s.type === 'before').sort(order);
+  const right = [...strands.filter(s => s.type !== 'before').sort(order), ...[...ghosts].sort(order)];
+  const nl = pack(left, 18, 4);
+  const nr = pack(right, 4, 18);
+  const cap = Math.max(2, Math.floor((W - AX - MIN_MAIN - 12) / STEP));
+  const lc = Math.min(nl, cap - Math.min(nr, Math.floor(cap / 2)));
+  const rc = Math.min(nr, cap - lc);
+  // The lane takes what the strands leave, so its blocks can say more.
+  const MAIN = Math.min(150, W - AX - 12 - (lc + rc) * STEP);
+  const shownL = left.filter(s => s.col < lc);
+  const shownR = right.filter(s => s.col < rc);
+  const hidden = left.length + right.length - shownL.length - shownR.length;
+
+  const items = [...shownL, ...shownR];
+  const t0 = Math.min(+j.start, ...items.map(i => +i.from)) - 14 * MIN;
+  const t1 = Math.max(+j.end, ...items.map(i => +i.to)) + 16 * MIN;
+  const px = t => ((t - t0) / MIN) * ppm;
+  const mainX = items.length ? AX + lc * STEP + 6 : AX + (W - AX - MAIN) / 2;
+  const leftX = c => mainX - 6 - COL - c * STEP;
+  const rightX = c => mainX + MAIN + 6 + c * STEP;
+
+  let grid = '';
+  const Q = 15 * MIN;
+  const every = ppm * 15 >= 40 ? 15 : 30;
+  for (let t = Math.ceil(t0 / Q) * Q; t <= t1; t += Q) {
+    const label = fmtTime(new Date(t));
+    const mm = +label.slice(3);
+    grid += `<div class="b-gl${mm === 0 ? ' hour' : ''}" style="top:${px(t).toFixed(1)}px">${mm % every === 0 ? `<span>${label}</span>` : ''}</div>`;
+  }
+
+  // The route itself: its rides to scale, waits as dotted lines, the spare time at each change,
+  // and a tick wherever a strand gets on or off at a stop along the way.
+  const names = legNames(j);
+  const ticks = new Map();
+  for (const s of items) {
+    for (const [p, end] of [[s.join, 0], [s.leave, -1]]) {
+      if (!p || sameStop(p.stop, j.legs[p.k].stops.at(end))) continue;
+      const list = ticks.get(p.k) || [];
+      if (!list.some(x => sameStop(x.stop, p.stop))) list.push(p);
+      ticks.set(p.k, list);
+    }
+  }
+  let main = '';
+  j.legs.forEach((l, k) => {
+    const y = px(+l.dep);
+    const h = Math.max(px(+l.arr) - y, 2);
+    const next = j.legs[k + 1];
+    if (next && next.dep - l.arr >= MIN) main += `<div class="b-wait" style="left:${(mainX + MAIN / 2 - 1).toFixed(1)}px;top:${px(+l.arr).toFixed(1)}px;height:${(px(+next.dep) - px(+l.arr)).toFixed(1)}px"></div>`;
+    // Changes and short walks are a thin bar; a walk that is a stretch of its own gets a block.
+    if (l.kind === 'walk' && !isSegment(l, j)) {
+      main += `<div class="bb walk" style="${box(mainX + MAIN / 2 - 4, y, 8, h)}" title="${esc(legTitle(l, names[k], j))}"></div>`;
+      return;
+    }
+    const delay = l.kind === 'transit' && !l.cancelled && l.delay >= 1 ? ` <em class="dly">+${l.delay}</em>` : '';
+    const head = h >= 15 ? `<span class="l1">${l.kind === 'transit' ? `<b>${esc(l.route.display_name || '')}</b> ${fmtTime(l.dep)}` : `${icon(l.kind === 'other' ? 'pin' : l.kind)} ${shortDur(l.dur)}`}${delay}</span>` : '';
+    const sub = h >= 30 && names[k].to ? `<span class="l2">→ ${esc(names[k].to)}</span>` : '';
+    const marks = (ticks.get(k) || []).map(p => `<i class="b-tick" style="top:${(px(+p.t) - y).toFixed(1)}px"><span>${esc(p.stop.name)} ${fmtTime(p.t)}</span></i>`).join('');
+    main += `<div class="bb ${l.kind}${l.kind === 'walk' ? ' wide' : ''}${l.kmh ? ' fast' : ''}${l.cancelled ? ' cancelled' : ''}" style="${box(mainX, y, MAIN, h)}${blockColors(l)}" title="${esc(legTitle(l, names[k], j))}">${head}${sub}${marks}</div>`;
+  });
+  // At each change, the time it gives you; orange when that's all walking (MOTIS pads a change
+  // to the station's minimum transfer time with a walk), red when it's too short.
+  j.transit.forEach((b, i) => {
+    if (!i) return;
+    const a = j.transit[i - 1];
+    const walk = sum(j.legs.slice(j.legs.indexOf(a) + 1, j.legs.indexOf(b)).filter(l => l.kind === 'walk').map(l => l.dur));
+    const gap = (b.dep - a.arr) / 1000;
+    const cls = b.atRisk || gap < walk ? 'bad' : gap - walk < 300 ? 'tight' : 'ok';
+    const y = (px(+a.arr) + px(+b.dep)) / 2 - 7;
+    const title = `${mins(Math.max(0, gap))} to change${walk >= 60 ? `, ${mins(walk)} of it walking` : ''}`;
+    main += `<span class="b-spare ${cls}" style="left:${(mainX + MAIN / 2 + 6).toFixed(1)}px;top:${y.toFixed(1)}px" title="${title}">${b.atRisk ? '⚠' : mins(Math.max(0, gap))}</span>`;
+  });
+  main += `<span class="b-cap main" style="left:${mainX.toFixed(1)}px;width:${MAIN}px;top:${(px(+j.start) - 18).toFixed(1)}px">${fmtTime(j.start)}</span>`;
+  main += `<span class="b-cap main${j.delay >= 1 ? ' dly' : ''}" style="left:${mainX.toFixed(1)}px;width:${MAIN}px;top:${(px(+j.end) + 3).toFixed(1)}px">${fmtTime(j.end)}</span>`;
+
+  const strandHTML = (s, x) => {
+    const y0 = px(+s.from);
+    const len = Math.max(px(+s.to) - y0, 6);
+    const nm = legNames(s.o);
+    const lead = s.legs.filter(l => l.kind !== 'walk').sort((a, b) => b.dur - a.dur)[0] || [...s.legs].sort((a, b) => b.dur - a.dur)[0];
+    let inner = '';
+    const stops = [+s.from, ...s.legs.flatMap(l => [+l.dep, +l.arr]), +s.to];
+    for (let i = 0; i < stops.length; i += 2) {
+      if (stops[i + 1] - stops[i] >= MIN) inner += `<i class="b-wait" style="left:${COL / 2 - 1}px;top:${(px(stops[i]) - y0).toFixed(1)}px;height:${(px(stops[i + 1]) - px(stops[i])).toFixed(1)}px"></i>`;
+    }
+    for (const l of s.legs) {
+      const y = px(+l.dep) - y0;
+      const h = Math.max(px(+l.arr) - px(+l.dep), 2);
+      const label = l === lead && h >= 22 ? `<span class="s-lbl">${braidLabel(l, nm[s.o.legs.indexOf(l)], h < 60)}</span>` : '';
+      inner += l.kind === 'walk' && l !== lead
+        ? `<span class="bb walk" style="${box(COL / 2 - 3, y, 6, h)}"></span>`
+        : `<span class="bb ${l.kind}${l.kind === 'walk' ? ' wide' : ''}" style="${box(0, y, COL, h)}${blockColors(l)}">${label}</span>`;
+    }
+    // Dashed links to the lane, at the moment the strand gets on or off one of its rides.
+    const link = (p, side) => {
+      const y = px(+p.t) - y0;
+      return side === 'in'
+        ? `<i class="b-conn in" style="left:${COL}px;width:${(mainX - x - COL).toFixed(1)}px;top:${y.toFixed(1)}px"></i>`
+        : `<i class="b-conn out" style="left:${(mainX + MAIN - x).toFixed(1)}px;width:${(x - mainX - MAIN).toFixed(1)}px;top:${y.toFixed(1)}px"></i>`;
+    };
+    if (s.type === 'before') inner += link(s.join, 'in');
+    else {
+      inner += link(s.leave, 'out');
+      if (s.join) inner += link(s.join, 'out');
+    }
+    if (s.type === 'before') inner += `<span class="s-cap" style="bottom:${len.toFixed(1)}px">${fmtTime(s.o.start)}</span>`;
+    if (s.type === 'after') inner += `<span class="s-cap ${s.verdict}" style="top:${len.toFixed(1)}px">${fmtTime(s.o.end)}</span>`;
+    const what = s.legs.filter(l => l.kind !== 'walk' || s.legs.length === 1).map(l => braidLabel(l, nm[s.o.legs.indexOf(l)])).join(', ');
+    const label = `${what}: leave ${fmtTime(s.o.start)}, home ${fmtTime(s.o.end)}. Open this route`;
+    return `<button type="button" class="strand ${s.type} ${s.verdict}" data-variant="${esc(s.o.key)}" style="${box(x, y0, COL, len)}" title="${label}" aria-label="${label}">${inner}</button>`;
+  };
+  const ghostHTML = (g, x) => {
+    const y0 = px(+g.from);
+    const len = Math.max(px(+g.to) - y0, 24);
+    const label = `${braidLabel(g.leg)} from ${esc(g.leg.stops[0].name)}: home ${fmtTime(g.o.end)}. Open this route`;
+    return `<button type="button" class="ghost ${g.verdict}" data-variant="${esc(g.o.key)}" style="${box(x, y0, COL, len)}--c:${esc(g.leg.route.ui_color || g.leg.route.color || '#555')}" title="${label}" aria-label="${label}">`
+      + `<span class="s-lbl">${braidLabel(g.leg, null, len < 60)}</span><span class="s-cap ${g.verdict}" style="top:${len.toFixed(1)}px">${fmtTime(g.o.end)}</span></button>`;
+  };
+  const side = shownL.map(s => strandHTML(s, leftX(s.col))).join('')
+    + shownR.map(s => (s.leg ? ghostHTML(s, rightX(s.col)) : strandHTML(s, rightX(s.col)))).join('');
+
+  const note = items.length
+    ? `Strands: other ways to do part of this route. Dashed: other rides from its stations. Faded: you'd leave earlier and get home no sooner. Tap one to open it.${hidden ? ` ${hidden} more don't fit.` : ''}`
+    : 'No other route in this search shares a ride or a station with this one. Earlier and later routes you load in the timetable show up here too.';
+  return `<p class="b-note">${note}</p><div class="braid" style="height:${px(t1).toFixed(0)}px">${grid}${main}${side}</div>`;
 }
 
 // ---------- ride mode ----------
@@ -1788,6 +2064,10 @@ document.addEventListener('click', e => {
     loadMore(more.dataset.more);
     return;
   }
+  const show = t.closest('button[data-show]');
+  if (show) { state.detailView = show.dataset.show; writeHash(); render(); return; }
+  const variant = t.closest('[data-variant]');
+  if (variant) { openDetail(variant.dataset.variant); return; }
   const route = t.closest('[data-key]');
   if (route) { openDetail(route.dataset.key); return; }
   const z = t.closest('[data-zoom]');

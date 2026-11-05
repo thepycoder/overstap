@@ -111,3 +111,12 @@ lane-timeline screens." So `web/` is the bike-transit lane timetable on overstap
 options hidden behind "+N slower", earlier/later paging, route detail with stop list, map,
 live delays and saved routes. Space-time charts, ride mode and the variation views (round 4)
 come later as views over the same `/api/journeys` data.
+
+## Variants view built (2026-11-05)
+
+Board 1 of round 4 (braided lane) is in the web UI as the route detail's **Variants** view,
+next to **Stops** (ADR-019). It braids in the other routes of the same search: strands where
+a route shares a vehicle but gets there or home differently, dashed ghosts for other rides
+from the same stations, faded when beaten, tap to open. The per-leg ladder (bike to Geel /
+Herentals, bus vs bike to Mol) still needs `/api/variants`.
+
