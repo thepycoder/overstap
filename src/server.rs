@@ -3,7 +3,8 @@
 //! | Endpoint | What |
 //! |---|---|
 //! | `GET /api/config` | map centre, bounds, time zone |
-//! | `GET /api/search?q=&near=lat,lng` | place search (MOTIS geocoder) |
+//! | `GET /api/search?q=&near=lat,lng` | place search (Citymapper, else MOTIS; `places.rs`) |
+//! | `GET /api/resolve?id=` | coordinates of a Citymapper search hit |
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
 //! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=` | journeys, MOTIS-shaped |
 //! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks, cancellations) |
@@ -13,6 +14,7 @@
 //! Blocking and threaded (tiny_http + reqwest::blocking): one rider, a handful of requests.
 
 use crate::motis::{Client, Leg};
+use crate::places::Places;
 use crate::planner::{self, Carry};
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -27,12 +29,13 @@ use tiny_http::{Header, Method, Request, Response, Server};
 
 const THREADS: usize = 8;
 
-pub fn run(c: Client, listen: &str, web: &Path) -> Result<()> {
+pub fn run(c: Client, places: Places, listen: &str, web: &Path) -> Result<()> {
     let web = web
         .canonicalize()
         .with_context(|| format!("web directory {} not found", web.display()))?;
     let server = Arc::new(Server::http(listen).map_err(|e| anyhow!("listen on {listen}: {e}"))?);
     let c = Arc::new(c);
+    let places = Arc::new(places);
     eprintln!(
         "overstap: http://{listen} (MOTIS {}, web {})",
         c.base_url(),
@@ -40,10 +43,10 @@ pub fn run(c: Client, listen: &str, web: &Path) -> Result<()> {
     );
     let workers: Vec<_> = (0..THREADS)
         .map(|_| {
-            let (server, c, web) = (server.clone(), c.clone(), web.clone());
+            let (server, c, places, web) = (server.clone(), c.clone(), places.clone(), web.clone());
             std::thread::spawn(move || {
                 for req in server.incoming_requests() {
-                    handle(&c, &web, req);
+                    handle(&c, &places, &web, req);
                 }
             })
         })
@@ -68,7 +71,7 @@ fn json_reply(status: u16, v: &Value) -> Reply {
     }
 }
 
-fn handle(c: &Client, web: &Path, mut req: Request) {
+fn handle(c: &Client, places: &Places, web: &Path, mut req: Request) {
     let t0 = Instant::now();
     let url = reqwest::Url::parse(&format!("http://local{}", req.url()))
         .unwrap_or_else(|_| reqwest::Url::parse("http://local/").unwrap());
@@ -79,7 +82,7 @@ fn handle(c: &Client, web: &Path, mut req: Request) {
         if *req.method() == Method::Post {
             let _ = req.as_reader().take(1 << 20).read_to_string(&mut body);
         }
-        match api(c, req.method(), &path, &q, &body) {
+        match api(c, places, req.method(), &path, &q, &body) {
             Ok(v) => json_reply(200, &v),
             Err(e) => {
                 let status = if e.to_string().starts_with("bad request") {
@@ -160,6 +163,7 @@ fn num<T: std::str::FromStr>(q: &HashMap<String, String>, key: &str) -> Result<O
 
 fn api(
     c: &Client,
+    places: &Places,
     method: &Method,
     path: &str,
     q: &HashMap<String, String>,
@@ -172,13 +176,26 @@ fn api(
             "timezone": "Europe/Brussels",
             "bounds": { "southwest": [49.5, 2.55], "northeast": [51.5, 6.4] },
         })),
-        (Method::Get, "/api/search") => search(c, q),
+        (Method::Get, "/api/search") => {
+            let text = q.get("q").map(|s| s.trim()).unwrap_or_default();
+            if text.chars().count() < 2 {
+                return Ok(json!([]));
+            }
+            let near = q.get("near").and_then(|s| planner::parse_coord(s));
+            Ok(json!(places.search(c, text, near)?))
+        }
+        (Method::Get, "/api/resolve") => {
+            let id = q
+                .get("id")
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| bad("id"))?;
+            Ok(json!(places.resolve(id)?))
+        }
         (Method::Get, "/api/reverse") => {
             let lat = num::<f64>(q, "lat")?.ok_or_else(|| bad("lat"))?;
             let lng = num::<f64>(q, "lng")?.ok_or_else(|| bad("lng"))?;
-            let hits = c.reverse_geocode(lat, lng)?;
-            Ok(match hits.first() {
-                Some(m) => json!({ "name": m.label(), "address": m.town() }),
+            Ok(match places.reverse(c, lat, lng)? {
+                Some(p) => json!({ "name": p.name, "address": p.address }),
                 None => json!({ "name": null }),
             })
         }
@@ -187,29 +204,6 @@ fn api(
         (Method::Post, "/api/ride") => ride(c, body),
         _ => bail!("bad request: no such endpoint {path}"),
     }
-}
-
-fn search(c: &Client, q: &HashMap<String, String>) -> Result<Value> {
-    let text = q.get("q").map(|s| s.trim()).unwrap_or_default();
-    if text.len() < 2 {
-        return Ok(json!([]));
-    }
-    let near = q.get("near").and_then(|s| planner::parse_coord(s));
-    let hits = c.geocode_near(text, near)?;
-    Ok(Value::Array(
-        hits.iter()
-            .take(8)
-            .map(|m| {
-                json!({
-                    "id": m.id,
-                    "name": m.label(),
-                    "address": m.town(),
-                    "coords": [m.lat, m.lon],
-                    "type": m.kind,
-                })
-            })
-            .collect(),
-    ))
 }
 
 fn journeys(c: &Client, q: &HashMap<String, String>) -> Result<Value> {

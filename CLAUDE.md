@@ -24,7 +24,8 @@ a folding bike and walking; re-plans live when delayed or stranded.
 ## Working rules
 - Run `cargo test` with MOTIS up (`MOTIS_URL=http://localhost:8080`); e2e tests skip when it's down.
 - Record findings from real queries in `docs/results-*.md`; keep `TODO.md` current.
-- Never use the Citymapper API at runtime (benchmark only, ADR-007).
+- Citymapper's web API: place search only (`places.rs`, MOTIS geocoder as fallback, ADR-017);
+  never for planning or live data (benchmark only, ADR-007).
 - Cloud workspaces: Geofabrik is blocked → use openstreetmap.fr + `tools/fix_osm_refs.py` (ADR-009);
   background processes die after ~2 h, so restart `motis server` when needed.
 - `motis server` reads `data/config.yml` (copied at import), not `config.yml`: a GBFS feed added

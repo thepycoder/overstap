@@ -11,6 +11,7 @@ mod lastmile;
 mod model;
 mod motis;
 mod overshoot;
+mod places;
 mod planner;
 mod render;
 mod rtlog;
@@ -106,6 +107,9 @@ enum Cmd {
         /// Directory with the web UI's static files.
         #[arg(long, default_value = "web", env = "OVERSTAP_WEB")]
         web: std::path::PathBuf,
+        /// Search places with the MOTIS geocoder only, never Citymapper (ADR-017).
+        #[arg(long, env = "OVERSTAP_NO_CITYMAPPER")]
+        no_citymapper: bool,
     },
     /// You're on a train (use cases 2 and 3): evaluate getting off at each of
     /// the next N stops and continuing from there. `--delay` simulates a delay.
@@ -224,7 +228,11 @@ fn main() -> Result<()> {
                 println!("\n[direct] {}", render::summary(&j.it));
             }
         }
-        Cmd::Serve { listen, web } => server::run(c, &listen, &web)?,
+        Cmd::Serve {
+            listen,
+            web,
+            no_citymapper,
+        } => server::run(c, places::Places::new(!no_citymapper), &listen, &web)?,
         Cmd::RtLog {
             db,
             interval,

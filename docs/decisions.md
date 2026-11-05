@@ -74,7 +74,7 @@ scoring (use case 3).
 ---
 
 ## ADR-007 — Citymapper only as a benchmark
-*2026-10-29 · accepted*
+*2026-10-29 · accepted · place search amended by ADR-017*
 
 **Decision.** The unauthenticated Citymapper web API may be used to compare
 results, never as a runtime dependency.
@@ -254,3 +254,25 @@ automatic switch yet).
 **Consequences.** Alerts arrive while the page is open or recently backgrounded; a phone
 that freezes the tab misses them. Real push needs a server-side watcher (rides stored in
 overstap, evaluated every minute, Web Push with VAPID keys) — the next step.
+
+---
+
+## ADR-017 — Place search from Citymapper, MOTIS geocoder as fallback
+*2026-11-05 · accepted*
+
+**Context.** The MOTIS geocoder (adr, OSM only) misses venues and hamlets ("'t Veld,
+Retie") and snaps venues to centroids (Nekkerhal). Citymapper's web search is Google's
+and finds them; bike-transit used it for a year. It is the website's own API: no key,
+undocumented, could change or block us without notice.
+
+**Decision.** The web UI's place search, place resolve and reverse geocoding call
+citymapper.com first (`src/places.rs`: paced at ≥ 350 ms between requests, cached
+5 min / 1 day, 8 s timeout). On an error or no result, search and reverse fall back to
+the MOTIS geocoder. `--no-citymapper` / `OVERSTAP_NO_CITYMAPPER=true` switches it off.
+Planning, live times and the CLI's free-text places stay on MOTIS: ADR-007 still holds
+for everything except place search.
+
+**Consequences.** Google hits come without coordinates: picking one costs one more
+request (`/api/resolve`), and only works while Citymapper does. Queries and the map
+position go to Citymapper. MOTIS keeps `geocoding: true` for now, so there's no RAM
+saving yet; turning it off would remove the fallback, decided after measuring on the NAS.

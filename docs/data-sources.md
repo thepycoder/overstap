@@ -55,7 +55,7 @@ Every Flemish mobility hub as a polygon, with `Deelsystemen_operatoren` and
 | Geofabrik Belgium extract | Preferred OSM source | **Blocked** from the cloud workspace; fine from home |
 | openstreetmap.fr Belgium extract | Fallback | Works, but 3,041 ways reference missing nodes → crashes osr with `osmium::invalid_location`. Cleaned with `tools/fix_osm_refs.py` |
 | BRouter (optional) | Tunable bike profiles | Not set up |
-| Citymapper web API | Benchmark only (ADR-007) | — |
+| Citymapper web API | Place search in the web UI, MOTIS geocoder as fallback (ADR-017); otherwise benchmark only (ADR-007) | Works (2026-11-05) |
 
 ## Our own data
 

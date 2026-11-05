@@ -41,6 +41,7 @@ services:
     environment:
       TZ: Europe/Brussels
       MOTIS_URL: http://motis:8080
+      # OVERSTAP_NO_CITYMAPPER: "true"   # place search via MOTIS only (ADR-017)
     ports:
       - "8738:8737"               # LAN; 8737 is bike-transit's
     networks: [default, proxy]

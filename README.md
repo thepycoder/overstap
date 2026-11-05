@@ -84,8 +84,9 @@ the RT logger). See `deploy/nas/README.md`.
 
 API (all JSON; legs are MOTIS itineraries passed through, plus `label`/`notes` where
 overstap changed them): `GET /api/journeys?start=lat,lng&end=lat,lng&mode=folding|shared|foot&time=RFC3339&arrive=1`,
-`POST /api/live {"trips":[tripId…]}`, `GET /api/search?q=&near=`, `GET /api/reverse?lat=&lng=`,
-`GET /api/config`, `GET /healthz`. See `src/server.rs`.
+`POST /api/live {"trips":[tripId…]}`, `GET /api/search?q=&near=`, `GET /api/resolve?id=`, `GET /api/reverse?lat=&lng=`,
+`GET /api/config`, `GET /healthz`. See `src/server.rs`. Place search asks Citymapper first and
+falls back to the MOTIS geocoder (ADR-017); `--no-citymapper` uses MOTIS only.
 
 ## Status
 
