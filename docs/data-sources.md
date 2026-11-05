@@ -34,7 +34,7 @@ public-transport/transitous) and the Transitland atlas
 | Donkey Kortrijk / Westhoek | `…/donkey_kortrijk_leiedal/gbfs`, `…/donkey_westhoek/gbfs.json` | Not in config yet |
 | Dott Ghent / Brussels | `https://gbfs.api.ridedott.com/public/v2/{ghent,brussels}/gbfs.json` | |
 | Bolt Brussels, Lime/Voi/Bird/Felyx Antwerp | see Transitland atlas | Not in config yet |
-| Donkey Mechelen | — | **Not found** in either feed list (verify) |
+| Donkey Mechelen / Waasland | (in `donkey_antwerp`) | No separate system: `donkey_antwerp` holds 86 Mechelen-area and 126 Waasland hubs incl. Lokeren Markt (checked 2026-11-05). `donkey_rivierenland` is the Dutch Rivierenland (Tiel), not Mechelen |
 | Hoppy Kempen (485 e-bikes, 95 zones, back-to-many) | — (generated, `deploy/motis/gbfs/hoppy-kempen`) | **No public GBFS** (not in MobilityData `systems.csv`, Transitous, transportdata.be). Built by `tools/hoppy_gbfs.py` from the Hoppinpunt dataset → 78 of 95 zones; availability assumed (ADR-011) |
 | Hoppy elsewhere | same tool, `--region <VVR>` | Hoppinpunt data also tags Hoppy bikes in Vlaamse Ardennen (46), Dender (41), Midwest (28), Brugge (22), Westhoek (13), Limburg (10), Mechelen (6). Pricing/rules per region unchecked |
 
@@ -47,6 +47,26 @@ Every Flemish mobility hub as a polygon, with `Deelsystemen_operatoren` and
   Features in the HTML (what `tools/hoppy_gbfs.py` scrapes; works from the cloud workspace).
 - Official WMS/WFS `https://geoserver.gis.cloud.mow.vlaanderen.be/geoserver/hoppin/…`
   (listed on transportdata.be). **403** from the cloud workspace; untested from home.
+
+### Unofficial live feeds: web maps checked (2026-11-05)
+
+Goal: find a public web map showing live vehicles of operators without GBFS, and poll
+it as an unofficial feed. Per the Hoppinpunt data the only bike operators in Flanders
+without a public GBFS are **Hoppy** (≈220 hubs, 6 regions) and **Mobit** (small,
+non-electric: Kortrijk, Limburg, Mechelen, Brasschaat). No live web map exists for either.
+
+| Where | What it is | Verdict |
+|---|---|---|
+| behoppy.eu (Hoppsharing BV) | Marketing site; "find a bike" is app-only; no web app or API subdomains | No map |
+| waarisdiefiets.be | Hobby aggregator map (Supabase + per-system GeoJSON snapshots) | Lists Hoppy on city pages but has **no Hoppy layer**; every live layer re-publishes a public GBFS we already have |
+| Hopp (hopp.bike) franchise platform | Hoppy's policy speaks of "Hopp-voertuigen"; Hopp publishes GBFS for some franchises (e.g. `hopp_konstanz` via MobiData BW) | Hoppy uses its own app (`eu.behoppy.*`), not listed as a Hopp location; no feed |
+| transportdata.be | Organisation "Hoppsharing" exists | 0 datasets; no Mobit either |
+| deelmobiliteitdender.be | Datawrapper map by SOLVA, data at `https://datawrapper.dwcdn.net/eRu8j/14/dataset.csv` | **Static** zones: 99 Hoppy locations in Dender + Vlaamse Ardennen (`X,Y,Gemeente,Locatie,aantal_fietsen`); 11 are >300 m from any Hoppinpunt hub |
+| OpenStreetMap | `amenity=bicycle_rental` + operator/network Hoppy | **Static**: ~20 points; 4 Kempen ones are >1 km from any Hoppinpunt hub (Geel ×2, Meerhout/Mol ×2) |
+| mobit.eu | App-only, "Mobit komt eraan!" | No map |
+
+The only live Hoppy source is the Hoppy app's own backend (not public). Static zone
+coverage can still improve from OSM and SOLVA (TODO).
 
 ## Streets
 

@@ -10,7 +10,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Find Transitous Belgian feed definitions → `docs/data-sources.md`
 - [x] Verify GBFS per operator (Blue-bike, Velo, Donkey, Dott all public)
 - [ ] Register a `bmc-partner-key` on the Belgian Mobility portal (De Lijn/TEC/STIB) in case anonymous access closes
-- [ ] Find Donkey Republic Mechelen feed (bikes appear under `donkey_antwerp`; confirm coverage)
+- [x] Find Donkey Republic Mechelen feed: covered by `donkey_antwerp` (86 Mechelen-area + 126 Waasland hubs incl. Lokeren Markt, 2026-11-05)
 - [x] **GTFS-RT logger** (ADR-006, ADR-015): `overstap rt-log`, changes only in SQLite + raw snapshots
 - [ ] Run the logger on the NAS (deploy/nas) and check real volume after a day; add De Lijn/NMBS alerts feeds
 
@@ -26,8 +26,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Nightly re-import with health-checked swap (`deploy/motis/update.sh`, `run.sh`): RT matching 74 → 99 % (De Lijn), 92 → 98 % (NMBS)
 - [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
 - [x] Hoppy Kempen as a generated static GBFS feed (`tools/hoppy_gbfs.py`, ADR-011)
-- [ ] Hoppy: ask Hoppy / IOK (Vervoerregio Kempen) for a public GBFS feed with live availability
-- [ ] Hoppy: the 17 Kempen zones not in the Hoppinpunt data (hand-curated list?)
+- [ ] Hoppy: ask Hoppsharing BV / IOK / SOLVA for a public GBFS feed with live availability (Hoppsharing is registered on transportdata.be with 0 datasets; no public web map exists, see data-sources "Unofficial live feeds")
+- [ ] Hoppy: merge extra zone sources into `tools/hoppy_gbfs.py`: OSM `bicycle_rental` Hoppy points (4 Kempen zones missing from Hoppinpunt) and the SOLVA locations CSV (11 missing in Dender/Vlaamse Ardennen)
 - [ ] Hoppy: other regions (Vlaamse Ardennen, Dender, Midwest, Brugge, …) once their rules are checked
 - [ ] E-bike speed: MOTIS uses ~15 km/h for every rental; re-time `ELECTRIC_ASSIST` legs (≈20 km/h) in overstap
 
