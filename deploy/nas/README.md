@@ -33,7 +33,9 @@ Live since 2026-11-05: https://overstap.projectwhy.be (tunnel `ugreen-nas`, prox
 public without Access by choice. Who visits: Cloudflare dashboard → projectwhy.be →
 Security → Analytics, filter *Host equals overstap.projectwhy.be*; the sampled logs show
 source IP, country, user agent and path (31 days on the Free plan). The `overstap`
-container log lists every request, but without the client's IP.
+container log has a line per request, starting with the visitor's IP and country
+(`203.0.113.7 NL GET / → 200`; LAN requests show the peer address and `--`); successful
+health checks aren't logged.
 
 The GHCR package is private after the first build: either make it public (GitHub →
 Packages → overstap → settings) or `docker login ghcr.io` on the NAS with a token that

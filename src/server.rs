@@ -96,17 +96,43 @@ fn handle(c: &Client, places: &Places, web: &Path, mut req: Request) {
     } else {
         static_file(web, &path)
     };
-    eprintln!(
-        "{} {} → {} ({} ms)",
-        req.method(),
-        req.url(),
-        reply.status,
-        t0.elapsed().as_millis()
-    );
+    // Docker's health check every 30 s would drown out the requests worth reading.
+    if !(path == "/healthz" && reply.status == 200) {
+        eprintln!(
+            "{} {} {} → {} ({} ms)",
+            client(&req),
+            req.method(),
+            req.url(),
+            reply.status,
+            t0.elapsed().as_millis()
+        );
+    }
     let mut resp = Response::from_data(reply.body).with_status_code(reply.status);
     resp.add_header(Header::from_bytes("Content-Type", reply.content_type).unwrap());
     resp.add_header(Header::from_bytes("Cache-Control", "no-cache").unwrap());
     let _ = req.respond(resp);
+}
+
+/// Who asked, for the request log: the visitor's IP and country as Cloudflare passes them on
+/// (public hostname), else the peer address and "--" (LAN). Anyone on the LAN can forge
+/// the headers; it's only for reading logs.
+fn client(req: &Request) -> String {
+    let header = |name: &'static str| {
+        req.headers()
+            .iter()
+            .find(|h| h.field.equiv(name))
+            .map(|h| h.value.as_str().to_string())
+    };
+    match header("CF-Connecting-IP") {
+        Some(ip) => format!(
+            "{ip} {}",
+            header("CF-IPCountry").unwrap_or_else(|| "??".into())
+        ),
+        None => match req.remote_addr() {
+            Some(a) => format!("{} --", a.ip()),
+            None => "- --".into(),
+        },
+    }
 }
 
 fn static_file(web: &Path, path: &str) -> Reply {
