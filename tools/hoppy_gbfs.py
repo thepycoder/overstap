@@ -2,8 +2,10 @@
 
 Hoppy publishes no GBFS. The Flemish government's Hoppinpunt dataset (DMOW) lists,
 per mobility hub, which shared-mobility operators are present and the hub's
-polygon. Every hub tagged "Hoppy ... Deelfietsen" in one vervoerregio becomes a
-virtual station; bikes can be returned at any of them (`any_station`).
+polygon. Every hub tagged "Hoppy ... Deelfietsen" in the given vervoerregio('s)
+becomes a virtual station; bikes can be returned at any of them (`any_station`).
+Pass several `--region`s for one network that allows returns across regions
+(Dender + Vlaamse Ardennen). Hubs offering classic bikes get a second vehicle type.
 
 Limits (see docs/decisions.md ADR-011):
 * No live availability: every hub reports `--assume-bikes` bikes, always open.
@@ -12,6 +14,7 @@ Limits (see docs/decisions.md ADR-011):
 
 Usage:
   python3 tools/hoppy_gbfs.py --region Kempen --out deploy/motis/gbfs/hoppy-kempen
+  python3 tools/hoppy_gbfs.py --region Dender --region "Vlaamse Ardennen" --out ...
   python3 tools/hoppy_gbfs.py --geojson hoppinpunten.geojson ...   # offline input
 """
 import argparse
@@ -23,7 +26,12 @@ import urllib.request
 from pathlib import Path
 
 FINDER_URL = "https://hoppin.be/nl/vind-hoppinpunten/"
-HOPPY_BIKES = re.compile(r"Hoppy - [^,]*Deelfietsen")
+HOPPY_BIKES = re.compile(r"Hoppy - [^,]*Deelfietsen - [^,]*?(Elektrisch|Conventioneel)")
+VEHICLE_TYPES = {  # Hoppinpunt propulsion → GBFS vehicle type
+    "Elektrisch": {"vehicle_type_id": "hoppy-ebike", "propulsion_type": "electric_assist",
+                   "max_range_meters": 50000, "name": "Hoppy e-bike"},  # range unknown; swappable batteries
+    "Conventioneel": {"vehicle_type_id": "hoppy-bike", "propulsion_type": "human", "name": "Hoppy bike"},
+}
 
 
 def fetch_features(url: str) -> list[dict]:
@@ -43,11 +51,9 @@ def fetch_features(url: str) -> list[dict]:
     return list(feats.values())
 
 
-def is_hoppy_bike_hub(f: dict, region: str) -> bool:
-    p = f["properties"]
-    return p.get("VVR") == region and bool(
-        HOPPY_BIKES.search(p.get("Deelsystemen_operator_aanbod") or "")
-    )
+def hoppy_bike_kinds(f: dict) -> set[str]:
+    """{'Elektrisch', 'Conventioneel'} subset offered by Hoppy at this hub."""
+    return set(HOPPY_BIKES.findall(f["properties"].get("Deelsystemen_operator_aanbod") or ""))
 
 
 def multipolygon(geom: dict) -> dict | None:
@@ -58,17 +64,18 @@ def multipolygon(geom: dict) -> dict | None:
     return None
 
 
-def build(features: list[dict], region: str, assume_bikes: int) -> dict[str, dict]:
+def build(features: list[dict], regions: list[str], assume_bikes: int) -> dict[str, dict]:
     now = int(time.time())
-    slug = re.sub(r"[^a-z0-9]+", "-", region.lower()).strip("-")
+    label = " + ".join(regions)
+    slug = re.sub(r"[^a-z0-9]+", "-", "-".join(regions).lower()).strip("-")
     system_id = f"hoppy-{slug}"
-    vt_id = "hoppy-ebike"
     hubs = sorted(
-        (f for f in features if is_hoppy_bike_hub(f, region)),
+        (f for f in features if f["properties"].get("VVR") in regions and hoppy_bike_kinds(f)),
         key=lambda f: f["properties"]["Naam"],
     )
     if not hubs:
-        sys.exit(f"no Hoppy bike hubs found for vervoerregio '{region}'")
+        sys.exit(f"no Hoppy bike hubs found for vervoerregio('s) {label}")
+    kinds_used = set().union(*(hoppy_bike_kinds(f) for f in hubs))
 
     stations, statuses = [], []
     for f in hubs:
@@ -87,10 +94,13 @@ def build(features: list[dict], region: str, assume_bikes: int) -> dict[str, dic
         if area := multipolygon(f["geometry"]):
             st["station_area"] = area
         stations.append(st)
+        kinds = sorted(hoppy_bike_kinds(f))
         statuses.append({
             "station_id": sid,
-            "num_bikes_available": assume_bikes,
-            "vehicle_types_available": [{"vehicle_type_id": vt_id, "count": assume_bikes}],
+            "num_bikes_available": assume_bikes * len(kinds),
+            "vehicle_types_available": [
+                {"vehicle_type_id": VEHICLE_TYPES[k]["vehicle_type_id"], "count": assume_bikes} for k in kinds
+            ],
             "is_installed": True,
             "is_renting": True,
             "is_returning": True,
@@ -106,19 +116,15 @@ def build(features: list[dict], region: str, assume_bikes: int) -> dict[str, dic
         "system_information": wrap({
             "system_id": system_id,
             "language": "nl",
-            "name": f"Hoppy {region}",
+            "name": f"Hoppy {label}",
             "operator": "Hoppy",
             "url": "https://behoppy.eu/",
             "timezone": "Europe/Brussels",
         }),
-        "vehicle_types": wrap({"vehicle_types": [{
-            "vehicle_type_id": vt_id,
-            "form_factor": "bicycle",
-            "propulsion_type": "electric_assist",
-            "max_range_meters": 50000,  # unknown; swappable batteries
-            "name": "Hoppy e-bike",
-            "return_constraint": "any_station",
-        }]}),
+        "vehicle_types": wrap({"vehicle_types": [
+            {**VEHICLE_TYPES[k], "form_factor": "bicycle", "return_constraint": "any_station"}
+            for k in sorted(kinds_used)
+        ]}),
         "station_information": wrap({"stations": stations}),
         "station_status": wrap({"stations": statuses}),
     }
@@ -126,7 +132,8 @@ def build(features: list[dict], region: str, assume_bikes: int) -> dict[str, dic
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--region", default="Kempen", help="vervoerregio (VVR), e.g. Kempen")
+    ap.add_argument("--region", action="append",
+                    help="vervoerregio (VVR), e.g. Kempen; repeat for one cross-region network")
     ap.add_argument("--out", type=Path, required=True, help="output directory")
     ap.add_argument("--geojson", type=Path, help="read Hoppinpunt features from a file instead")
     ap.add_argument("--assume-bikes", type=int, default=1,
@@ -137,12 +144,13 @@ def main() -> None:
         features = json.loads(a.geojson.read_text())["features"]
     else:
         features = fetch_features(FINDER_URL)
-    files = build(features, a.region, a.assume_bikes)
+    regions = a.region or ["Kempen"]
+    files = build(features, regions, a.assume_bikes)
     a.out.mkdir(parents=True, exist_ok=True)
     for name, doc in files.items():
         (a.out / f"{name}.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1))
     n = len(files["station_information"]["data"]["stations"])
-    print(f"{n} Hoppy hubs in {a.region} → {a.out}")
+    print(f"{n} Hoppy hubs in {' + '.join(regions)} → {a.out}")
 
 
 if __name__ == "__main__":

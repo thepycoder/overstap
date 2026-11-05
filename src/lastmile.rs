@@ -1,6 +1,6 @@
 //! Last-mile corrections MOTIS can't express from GBFS alone (use case 1).
 //!
-//! * Hub-only providers (Donkey Republic): the GBFS feed has no geofencing
+//! * Hub-only providers (Donkey Republic, nextbike): the GBFS feed has no geofencing
 //!   zones and no return constraint, so MOTIS treats the bikes as free-floating
 //!   and drops them at your destination's door. In reality they must end at a
 //!   hub. We move the drop-off to the best hub and add the walk.
@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 /// Providers whose bikes must be returned at one of their stations/hubs,
 /// although their GBFS feed doesn't say so.
-const HUB_ONLY_PREFIXES: &[&str] = &["donkey"];
+const HUB_ONLY_PREFIXES: &[&str] = &["donkey", "nextbike"];
 /// Round-trip providers worth pricing as a tour.
 const TOUR_PROVIDERS: &[&str] = &["blue-bike"];
 /// Time to unlock/park a shared bike.
@@ -215,4 +215,19 @@ fn truncate_after(it: &Itinerary, leg: &crate::motis::Leg) -> Itinerary {
         out.legs.truncate(i + 1);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_hub_only;
+
+    #[test]
+    fn hub_only_matches_feed_name_prefixes() {
+        for p in ["donkey-antwerp", "donkey-westhoek", "nextbike-vlaamse-rand"] {
+            assert!(is_hub_only(p), "{p}");
+        }
+        for p in ["blue-bike", "dott-ghent", "lime-kortrijk", "hoppy-kempen"] {
+            assert!(!is_hub_only(p), "{p}");
+        }
+    }
 }

@@ -30,16 +30,22 @@ operator and region: `TODO-sharing.md`. The table below holds what is verified.
 
 | Operator | GBFS URL | Notes |
 |---|---|---|
-| Blue-bike (all stations) | `https://api.delijn.be/gbfs/gbfs.json` | GBFS 2.3, has `geofencing_zones` |
-| Velo Antwerpen | `https://gbfs.smartbike.com/antwerp/1.0/gbfs.json` | |
-| Donkey Republic Antwerp | `https://stables.donkey.bike/api/public/gbfs/3.0/donkey_antwerp/gbfs.json` | |
+| Blue-bike (all stations) | `https://api.delijn.be/gbfs/gbfs.json` | GBFS 2.3, 331 stations, `geofencing_zones`. One vehicle type (`human`, `return_constraint: free_floating`): it doesn't separate e-bikes or encode the round-trip rule |
+| Velo Antwerpen | `https://gbfs.smartbike.com/antwerp/1.0/gbfs.json` | GBFS 2.0, 323 stations |
+| Donkey Republic Antwerp | `https://stables.donkey.bike/api/public/gbfs/3.0/donkey_antwerp/gbfs.json` | Also covers **VR Waasland (Lokeren) and VR Mechelen**: 866 hubs, ~2,000 bikes |
 | Donkey Republic Ghent | `https://stables.donkey.bike/api/public/gbfs/3.0/donkey_gh/gbfs.json` | |
-| Donkey Kortrijk / Westhoek | `…/donkey_kortrijk_leiedal/gbfs`, `…/donkey_westhoek/gbfs.json` | Not in config yet |
-| Dott Ghent / Brussels | `https://gbfs.api.ridedott.com/public/v2/{ghent,brussels}/gbfs.json` | |
-| Bolt Brussels, Lime/Voi/Bird/Felyx Antwerp | see Transitland atlas | Not in config yet |
-| Donkey Mechelen | — | Vervoerregio Mechelen network (360 bikes, 101 locations, Jun 2024); no own feed in the registry, probably inside `donkey_antwerp` (TODO-sharing A3) |
-| Hoppy Kempen (485 e-bikes, 95 zones, back-to-many) | — (generated, `deploy/motis/gbfs/hoppy-kempen`) | **No public GBFS** (not in MobilityData `systems.csv`, Transitous, transportdata.be). Built by `tools/hoppy_gbfs.py` from the Hoppinpunt dataset → 78 of 95 zones; availability assumed (ADR-011) |
-| Hoppy elsewhere | same tool, `--region <VVR>` | Hoppinpunt data also tags Hoppy bikes in Vlaamse Ardennen (46), Dender (41), Midwest (28), Brugge (22), Westhoek (13), Limburg (10), Mechelen (6). Pricing/rules per region unchecked |
+| Donkey Westhoek | `…/donkey_westhoek/gbfs.json` | Added 2026-11-05. 55 hubs on the coast |
+| Donkey Kortrijk & Leiedal | `…/donkey_kortrijk_leiedal/gbfs` | **Empty** (2026-11-05); Mobit runs Kortrijk |
+| Dott Ghent / Brussels | `https://gbfs.api.ridedott.com/public/v2/{ghent,brussels}/gbfs.json` | Ghent configured. No other Flemish Dott city exists (404) |
+| nextbike Vlaamse Rand | `https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_hf/gbfs.json` | Added 2026-11-05. 68 stations; hub-only fix |
+| Lime Kortrijk | `https://data.lime.bike/api/partners/v2/gbfs/kortrijk/gbfs.json` | Added 2026-11-05. ~205 e-bikes. Lime Antwerp is 404 |
+| Voi Antwerp + Brussels | `https://api.voiapp.io/gbfs/be/7a4cb689-a2ee-409d-a5fe-49d2e8d50717/v2/gbfs.json` | Added 2026-11-05. One feed, e-bikes + steps; worked without a licence |
+| Villo, Bolt Brussels, Cooltra Brussels | see `docs/results-2026-11-05.md` | Live, not configured yet (TODO-sharing C) |
+| Hoppy (Kempen, Dender + Vlaamse Ardennen, Brugge, Midwest, Westhoek, Genk) | — (generated, `deploy/motis/gbfs/hoppy-*`) | **No public GBFS.** Built by `tools/hoppy_gbfs.py` from the Hoppinpunt dataset, 238 hubs in all; availability assumed (ADR-011). Mechelen Hoppy is steps only |
+| Mobit (Kortrijk, Hasselt, Mechelen) | — | No feed known; 44 Hoppinpunten |
+
+Probe of every candidate, and coverage per operator and region:
+`docs/results-2026-11-05.md`. Coverage check: `tools/hub_coverage.py`.
 
 ### Hoppinpunt dataset (DMOW)
 
@@ -47,7 +53,11 @@ Every Flemish mobility hub as a polygon, with `Deelsystemen_operatoren` and
 `Deelsystemen_operator_aanbod` (operator + vehicle type). Two ways in:
 
 - `https://hoppin.be/nl/vind-hoppinpunten/` embeds all 961 hubs as GeoJSON
-  Features in the HTML (what `tools/hoppy_gbfs.py` scrapes; works from the cloud workspace).
+  Features in the HTML (what `tools/hoppy_gbfs.py` and `tools/hub_coverage.py` scrape).
+  Reachable from the cloud workspace on 2026-10-29 but blocked on 2026-11-05;
+  reachable from home. Fields include `VVR` (15 regions), `Status` (`Actief` or
+  `Mobiliteitsknooppunt`; both carry offers) and `Deelsystemen_operator_aanbod`
+  (operator, vehicle type, VOM/niet-VOM, propulsion). Some offers are stale (Bird, Lime Antwerp).
 - Official WMS/WFS `https://geoserver.gis.cloud.mow.vlaanderen.be/geoserver/hoppin/…`
   (listed on transportdata.be). **403** from the cloud workspace; untested from home.
 

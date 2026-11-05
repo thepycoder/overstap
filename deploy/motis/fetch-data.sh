@@ -32,5 +32,9 @@ fi
 
 # 4. Operators without a public GBFS feed: build a static one (ADR-011).
 python3 ../../tools/hoppy_gbfs.py --region Kempen --out gbfs/hoppy-kempen
+python3 ../../tools/hoppy_gbfs.py --region Dender --region "Vlaamse Ardennen" --out gbfs/hoppy-dender-vlaamse-ardennen
+for r in Brugge Midwest Westhoek Limburg; do
+  python3 ../../tools/hoppy_gbfs.py --region "$r" --out "gbfs/hoppy-$(echo "$r" | tr '[:upper:]' '[:lower:]')"
+done
 
 echo "Now: ./motis import && ./motis server"
