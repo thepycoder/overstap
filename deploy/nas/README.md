@@ -29,6 +29,12 @@ Then in Cloudflare Zero Trust → Tunnels → your tunnel → Public hostnames: 
 worker (ride-mode alerts) needs HTTPS, which the tunnel provides. The app has no login:
 put it behind Cloudflare Access if it shouldn't be public.
 
+Live since 2026-11-05: https://overstap.projectwhy.be (tunnel `ugreen-nas`, proxied CNAME),
+public without Access by choice. Who visits: Cloudflare dashboard → projectwhy.be →
+Security → Analytics, filter *Host equals overstap.projectwhy.be*; the sampled logs show
+source IP, country, user agent and path (31 days on the Free plan). The `overstap`
+container log lists every request, but without the client's IP.
+
 The GHCR package is private after the first build: either make it public (GitHub →
 Packages → overstap → settings) or `docker login ghcr.io` on the NAS with a token that
 can read packages.
