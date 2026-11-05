@@ -18,6 +18,12 @@ docker compose up -d
 docker compose logs -f motis # first import ≈ 10 min, needs ~4 GB RAM at its peak
 ```
 
+On the UGREEN DXP2800 it runs as the UGOS Container Manager stack `overstap`
+(`/volume1/docker/overstap`, created 2026-11-05 with the `ugos-nas-docker` skill). That copy
+of `compose.yaml` has no `build: ../..` line: the NAS policy refuses build contexts outside
+the stack folder, and the image comes from GHCR anyway. Update it with `ugos.py apply overstap
+<file> --pull`. First import there: downloads 1.5 min, import 150 s.
+
 Then in Cloudflare Zero Trust → Tunnels → your tunnel → Public hostnames: add e.g.
 `overstap.projectwhy.be` → `http://overstap:8737` (same as bike-transit). The service
 worker (ride-mode alerts) needs HTTPS, which the tunnel provides. The app has no login:

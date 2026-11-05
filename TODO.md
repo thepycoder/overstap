@@ -12,7 +12,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Register a `bmc-partner-key` on the Belgian Mobility portal (De Lijn/TEC/STIB) in case anonymous access closes
 - [x] Find Donkey Republic Mechelen feed: covered by `donkey_antwerp` (86 Mechelen-area + 126 Waasland hubs incl. Lokeren Markt, 2026-11-05)
 - [x] **GTFS-RT logger** (ADR-006, ADR-015): `overstap rt-log`, changes only in SQLite + raw snapshots
-- [ ] Run the logger on the NAS (deploy/nas) and check real volume after a day; add De Lijn/NMBS alerts feeds
+- [~] Run the logger on the NAS (deploy/nas): running since 2026-11-05 13:55; check real volume after a day; add De Lijn/NMBS alerts feeds
 
 ## Phase 1 — MOTIS running
 
