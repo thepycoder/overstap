@@ -72,6 +72,11 @@ const state = {
   timeMode: 'now',
   time: '',
   tab: DEFAULT_TAB,
+  // Your own (non-folding) bike: 'none', 'here' (with you) or 'parked' at bikeAt. The planner
+  // uses it for whatever stretch it can reach (ADR-018). Only for the Shared and On foot tabs;
+  // the folding bike is with you anyway. Kept in the browser: it's where the bike really is.
+  bike: 'none',
+  bikeAt: null,
   journeys: [],
   byKey: new Map(),
   paging: { later: 'idle', earlier: 'off' },
@@ -224,7 +229,7 @@ function normJourney(raw, win = null, ownBike = false) {
   legs.forEach((l, k) => { if (l.kind === 'walk' && legs[k - 1]?.kind === 'transit' && legs[k + 1]?.kind === 'transit') l.transfer = true; });
   for (const l of legs) {
     // Only your own bike is re-timed (and sped up to catch a train); rentals keep their times.
-    if (ownBike && l.kind === 'bike' && l.distance) l.rideDur = l.dur = rideSec(l.distance, RIDE_KMH);
+    if (l.kind === 'bike' && !l.rental && l.distance) l.rideDur = l.dur = rideSec(l.distance, RIDE_KMH);
   }
   const j = {
     raw, legs,
@@ -367,11 +372,13 @@ function fetchJourneys(timeMode, time, win = null) {
   const tab = state.tab;
   const params = { start: ll(state.from.coords), end: ll(state.to.coords), mode: tab, window: WINDOW_MIN, maxbike: MAX_BIKE_MIN[tab] };
   if (tab === 'folding') Object.assign(params, { kmh: RIDE_KMH, fast: FAST_KMH });
+  const bike = bikeParam();
+  if (bike) Object.assign(params, { bike, kmh: RIDE_KMH });
   if (time) params.time = isoFromDate(time);
   if (timeMode === 'ARRIVE_BY') params.arrive = 1;
   const from = slim(state.from);
   const to = slim(state.to);
-  return api('/api/journeys', params).then(d => normalize(d, win, tab).map(j => Object.assign(j, { from, to, tab })));
+  return api('/api/journeys', params).then(d => normalize(d, win, tab).map(j => Object.assign(j, { from, to, tab, bike })));
 }
 
 // Adds a page of results; returns the journeys it contributed.
@@ -551,7 +558,7 @@ function savedJourney(entry) {
   if (!j) {
     j = normJourney(entry.raw, entry.win || null, entry.tab === 'folding');
     if (!j) return null;
-    Object.assign(j, { key: entry.id, from: entry.from, to: entry.to, tab: entry.tab, saved: true });
+    Object.assign(j, { key: entry.id, from: entry.from, to: entry.to, tab: entry.tab, bike: entry.bike || null, saved: true });
     savedCache.set(entry.id, j);
   }
   return j;
@@ -562,7 +569,7 @@ const isSaved = key => savedEntries().some(s => s.id === key);
 
 function saveJourney(j) {
   const list = savedEntries().filter(s => s.id !== j.key);
-  list.push({ id: j.key, savedAt: Date.now(), tab: j.tab, from: j.from, to: j.to, raw: j.raw, win: j.win });
+  list.push({ id: j.key, savedAt: Date.now(), tab: j.tab, bike: j.bike || null, from: j.from, to: j.to, raw: j.raw, win: j.win });
   try {
     store.setOrThrow('saved', list);
   } catch {
@@ -673,7 +680,7 @@ const markers = {};
 let drawnJourney = null;
 
 function placeMarker(role) {
-  const p = state[role];
+  const p = role === 'bikeAt' && state.bike !== 'parked' ? null : state[role];
   if (!p) { markers[role]?.remove(); delete markers[role]; return; }
   if (!markers[role]) {
     markers[role] = L.marker(p.coords, {
@@ -731,6 +738,12 @@ function drawJourney(j, { fit = true } = {}) {
 // ---------- endpoints & autocomplete ----------
 
 function setEndpoint(role, place, { replan = true } = {}) {
+  if (role === 'bikeAt') {
+    setBike(place ? 'parked' : 'none', place && slim(place));
+    if (place) rememberPlace(state.bikeAt);
+    if (replan) { state.savedId = null; plan(); }
+    return;
+  }
   state[role] = place ? { name: place.name, address: place.address, coords: [+place.coords[0], +place.coords[1]], current: !!place.current } : null;
   $('#' + role).value = place ? place.name : '';
   placeMarker(role);
@@ -797,7 +810,7 @@ function setupField(role) {
     const q = input.value.trim();
     if (q.length < 2) return recents();
     const mine = ++seq;
-    const other = state[role === 'from' ? 'to' : 'from'];
+    const other = state[{ from: 'to', to: 'from', bikeAt: 'to' }[role]];
     const near = other?.coords || [map.getCenter().lat, map.getCenter().lng];
     try {
       const res = await api('/api/search', { q, near: ll(near) });
@@ -910,7 +923,7 @@ function legTitle(l, nm, j) {
     const extra = [l.live?.platform && `track ${l.live.platform}`, l.cancelled ? 'cancelled' : l.delay >= 1 && `${l.delay} min late`].filter(Boolean).join(', ');
     return `${l.route.display_name || ''}${l.headsign ? ` towards ${l.headsign}` : ''}${extra ? ` (${extra})` : ''}\n${nm.from || ''} ${fmtTime(l.dep)} → ${nm.to || ''} ${fmtTime(l.arr)} (${fmtDur(l.dur)})`;
   }
-  const what = l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: j.ownBike ? 'Ride your bike' : 'Cycle', scooter: 'Scooter', cab: 'Taxi or on-demand', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: 'Travel' }[l.kind];
+  const what = l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: 'Ride your bike', scooter: 'Scooter', cab: 'Taxi or on-demand', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: 'Travel' }[l.kind];
   return `${what}${l.distance ? ` ${fmtDist(l.distance)}` : ''} · ${fmtDur(l.dur)}${l.kmh ? ` at ${Math.ceil(l.kmh)} km/h` : ''}${nm.to ? `\n→ ${nm.to}` : ''}`;
 }
 
@@ -950,15 +963,36 @@ function setHeader(visible) {
 
 function renderSummary() {
   if (!state.from || !state.to) return;
-  const when = state.timeMode === 'now' ? 'Leave now' : `${state.timeMode === 'arrive' ? 'Arrive by' : 'Depart'} ${fmtTime(targetTime())}`;
+  const when = (state.timeMode === 'now' ? 'Leave now' : `${state.timeMode === 'arrive' ? 'Arrive by' : 'Depart'} ${fmtTime(targetTime())}`)
+    + ({ here: ' · your bike', parked: ` · bike at ${state.bikeAt?.name}` }[bikeParam() && state.bike] || '');
   const html = `<span class="sum-route"><b>${esc(state.from.name)}</b> → <b>${esc(state.to.name)}</b></span><span class="sum-when">${esc(when)}</span>`;
   $('#summary').innerHTML = html;
   $('#pill').innerHTML = `${icon('pin')}${html}`;
 }
 
+// The API's `bike`: 'here', where it's parked as lat,lng, or null (none, or the folding tab).
+function bikeParam() {
+  if (state.tab === 'folding') return null;
+  if (state.bike === 'here') return 'here';
+  return state.bike === 'parked' && state.bikeAt ? ll(state.bikeAt.coords) : null;
+}
+
+function setBike(mode, at = state.bikeAt) {
+  state.bike = mode;
+  state.bikeAt = at;
+  store.set('bike', { mode, at: at && slim(at) });
+  $('#bikeAt').value = at?.name || '';
+  placeMarker('bikeAt');
+}
+
 function renderTabs() {
   $('#tabs').innerHTML = TABS.map(t =>
     `<button type="button" data-tab="${t.id}" aria-pressed="${t.id === state.tab}" title="${esc(t.title)}">${icon(t.icon)} ${t.name}</button>`).join('');
+  const sel = $('#bike-mode');
+  sel.hidden = state.tab === 'folding';
+  sel.value = state.bike;
+  sel.querySelector('[value="parked"]').textContent = state.bikeAt ? `My bike: at ${state.bikeAt.name}` : 'My bike: parked…';
+  $('#bikeat').hidden = sel.hidden || state.bike !== 'parked';
 }
 
 function renderViewbar() {
@@ -995,7 +1029,7 @@ function renderIntro() {
   const trips = store.get('trips', []);
   const saved = savedJourneys();
   $('#intro').innerHTML = `<h2>overstap</h2>
-    <p>Pick a start and destination above. <b>Folding bike</b> rides to the station, takes the bike on board and rides the last stretch; <b>Shared bikes</b> adds Blue-bike, Donkey, Velo and Hoppy, with their parking rules; <b>On foot</b> is public transport and walking.</p>
+    <p>Pick a start and destination above. <b>Folding bike</b> rides to the station, takes the bike on board and rides the last stretch; <b>Shared bikes</b> adds Blue-bike, Donkey, Velo and Hoppy, with their parking rules; <b>On foot</b> is public transport and walking. Tell it where <b>your own bike</b> is (with you, or parked at a station) and Shared bikes and On foot also use it for the stretch it can reach.</p>
     ${saved.length ? `<div class="group-title">Saved routes</div><div class="saved-list">${saved.map(savedItemHTML).join('')}</div>` : ''}
     ${trips.length ? `<div class="group-title">Recent trips</div><div class="trips">${trips.map((t, k) =>
       `<button type="button" class="trip" data-trip="${k}">${icon('history')}<span>${esc(t.from.name)} → ${esc(t.to.name)}</span></button>`).join('')}</div>` : ''}`;
@@ -1317,11 +1351,15 @@ function legHTML(l, j) {
         ? `<details class="stops"><summary>${between.length} stop${between.length > 1 ? 's' : ''} · ${fmtDur(l.dur)}</summary><ol>${stopsList}</ol></details>`
         : `<div class="stops">Non-stop · ${fmtDur(l.dur)}</div>`}`;
   } else {
-    const titles = { bike: j.ownBike ? 'Ride your bike' : 'Cycle', scooter: 'Ride a scooter', cab: 'Taxi or on-demand ride', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: titleCase(l.mode || 'Travel') };
+    const titles = { bike: 'Ride your bike', scooter: 'Ride a scooter', cab: 'Taxi or on-demand ride', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: titleCase(l.mode || 'Travel') };
     const r = l.rental;
     const title = r ? `${esc(r.systemName || r.providerId)}${r.electric ? ' e-bike' : ''}` : titles[l.kind];
-    const rule = r && ({ ROUNDTRIP_STATION: 'Round trip: bring it back to this station', ANY_STATION: 'Park at any station or hub' }[r.returnConstraint]
-      || (r.toStationName ? `Park at ${esc(r.toStationName)}` : ''));
+    const rule = r ? ({ ROUNDTRIP_STATION: 'Round trip: bring it back to this station', ANY_STATION: 'Park at any station or hub' }[r.returnConstraint]
+      || (r.toStationName ? `Park at ${esc(r.toStationName)}` : ''))
+      // Your own bike without the folding bike's ticket stays at the station.
+      : l.kind !== 'bike' || j.ownBike ? ''
+      : j.legs.slice(j.legs.indexOf(l) + 1).some(x => x.kind === 'transit') ? (l.toName ? `Leave it at ${esc(l.toName)}` : '')
+      : j.legs.slice(0, j.legs.indexOf(l)).some(x => x.kind === 'transit') ? 'Where you parked it' : '';
     const detail = [l.distance ? fmtDist(l.distance) : null, fmtDur(l.dur), r?.electric && `timed at ${EBIKE_KMH} km/h`, l.kmh && `<b class="fast">${Math.ceil(l.kmh)} km/h, faster than your usual ${RIDE_KMH}</b>`].filter(Boolean).join(' · ');
     body = `<div class="tl-title">${icon(l.kind === 'other' ? 'pin' : l.kind)} ${title}</div><div class="tl-sub">${detail}</div>${rule ? `<div class="tl-sub">${rule}</div>` : ''}`;
   }
@@ -1644,6 +1682,7 @@ async function loadRideExtras(j, force = false) {
   const body = {
     mode: j.tab,
     to: ll(j.to.coords),
+    bike: j.bike && j.bike !== 'here' ? j.bike : undefined,
     changes: m.changes.map(ch => {
       const prev = j.legs[ch.a];
       const stop = prev.stops[prev.stops.length - 1];
@@ -1666,8 +1705,19 @@ async function loadRideExtras(j, force = false) {
   if (document.body.dataset.mode === 'ride') renderRideSoon();
 }
 
+// Where a route leaves your own bike: at the station you ride it to, or at the destination
+// when you ride it there. Taking the route moves it there, so the next search knows.
+function moveBikeAlong(j) {
+  if (!j.bike) return;
+  const k = j.legs.map(l => l.kind === 'bike' && !l.rental).lastIndexOf(true);
+  if (k < 0) return;
+  const raw = j.raw.legs[k];
+  setBike('parked', k === j.legs.length - 1 ? slim(j.to) : { name: legNames(j)[k].to || 'the station', address: null, coords: [raw.to.lat, raw.to.lon] });
+}
+
 function startRide(j) {
   if (!isSaved(j.key)) saveJourney(j);
+  moveBikeAlong(j);
   state.rideId = j.key;
   state.savedId = null;
   Object.assign(rideState, { facts: null, change: null, extras: null, extrasKey: '' });
@@ -1688,7 +1738,7 @@ function takePlanB(k) {
   const raw = { legs: [...j.raw.legs.slice(0, ch.a + 1), ...fb.raw.legs], label: 'Plan B', notes: [`Plan B from ${ch.place}, made ${fmtTime(new Date())}.`] };
   const nj = normJourney(raw, null, j.tab === 'folding');
   if (!nj) return;
-  Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab });
+  Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab, bike: j.bike });
   saveJourney(nj);
   unsaveJourney(j.key);
   startRide(nj);
@@ -1848,6 +1898,17 @@ $('#swap').addEventListener('click', () => {
 $('.locate').innerHTML = icon('locate');
 $('.refresh').innerHTML = icon('refresh');
 $('.locate').addEventListener('click', () => locate('from'));
+$('.bike-ico').innerHTML = icon('bike');
+{
+  const b = store.get('bike', null);
+  if (b && ['none', 'here', 'parked'].includes(b.mode)) setBike(b.mode === 'parked' && !b.at ? 'none' : b.mode, b.at || null);
+}
+$('#bike-mode').addEventListener('change', e => {
+  setBike(e.target.value);
+  state.savedId = null;
+  if (state.bike === 'parked' && !state.bikeAt) { renderTabs(); $('#bikeAt').focus(); return; }
+  plan();
+});
 
 const timeMode = $('#time-mode');
 const timeInput = $('#time');
@@ -1881,6 +1942,7 @@ function applyHash() {
 
 setupField('from');
 setupField('to');
+setupField('bikeAt');
 pruneSaved();
 applyHash();
 // Our own hash writes use replaceState, so this only fires for pasted or bookmarked links.

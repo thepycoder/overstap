@@ -111,7 +111,7 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 
 /* ---------- plan form ---------- */
 .plan { display: flex; align-items: center; gap: 10px; }
-.endpoints { position: relative; flex: 1 1 auto; max-width: 860px; display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.endpoints { position: relative; flex: 1 1 auto; min-width: 260px; max-width: 860px; display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
 .field { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 14px; }
 .field input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; padding: 10px 0; outline: none; font-size: 16px; }
 .field input::placeholder { color: var(--faint); }
@@ -135,6 +135,11 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 
 .when { display: flex; gap: 8px; flex: none; }
 .when select, .when input { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 9px 10px; }
+.when select[hidden] { display: none; }
+#bike-mode { max-width: 10.5em; text-overflow: ellipsis; }
+.bikeat { margin-top: 8px; max-width: 860px; display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.bikeat[hidden] { display: none; }
+.bike-ico { display: grid; color: var(--accent); }
 .done { margin-left: auto; border: 0; background: var(--ink); color: var(--panel); border-radius: 10px; padding: 7px 14px; font-weight: 600; }
 
 .summary { width: 100%; align-items: center; gap: 10px; text-align: left; border: 1px solid var(--line); background: var(--panel-2); border-radius: 12px; padding: 9px 12px; }
@@ -391,6 +396,7 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .pin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
 .pin.from { background: var(--from); }
 .pin.to { background: #1f2328; border-radius: 4px; }
+.pin.bikeAt { background: var(--accent); border-radius: 4px; }
 .leaflet-container { font: inherit; }
 .leaflet-tile-pane { filter: saturate(.75) contrast(.95); }
 .stop-tip { font-weight: 600; }
@@ -423,7 +429,7 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
   .done { display: inline-block; }
   .zoom { display: none; }
 
-  body[data-mode="results"]:not(.editing) .plan { display: none; }
+  body[data-mode="results"]:not(.editing) :is(.plan, .bikeat) { display: none; }
   body[data-mode="results"]:not(.editing) .summary { display: flex; }
 
   .intro { left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 50%; }

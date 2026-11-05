@@ -13,6 +13,35 @@ use serde::Serialize;
 
 /// Minutes a round-trip bike must save over walking to be offered.
 const TOUR_MIN_GAIN_MIN: i64 = 3;
+/// Starting this close to your parked bike means it's with you.
+const NEAR_BIKE_M: f64 = 300.0;
+/// Longest walk from the last stop to your parked bike.
+const PARKED_WALK_MAX_S: u32 = 10 * 60;
+/// Unlocking your own bike.
+const UNLOCK_S: i64 = 60;
+
+/// Where your own (non-folding) bike is. It never goes on board: the planner uses it for
+/// whichever street leg it can reach, and the rest of the journey is `carry`.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub enum OwnBike {
+    #[default]
+    None,
+    /// With you at the start: ride it to the first stop and leave it there.
+    Here,
+    /// Parked here (lat, lon) from an earlier trip: travel there, then ride it on.
+    Parked((f64, f64)),
+}
+
+impl OwnBike {
+    /// "here", or where it's parked as "lat,lon".
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "" | "none" => Some(Self::None),
+            "here" => Some(Self::Here),
+            other => parse_coord(other).map(Self::Parked),
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Carry {
@@ -46,6 +75,8 @@ pub struct Request {
     pub ride_kmh: f64,
     /// Also search as if riding this fast, to find trains you'd only catch riding hard.
     pub fast_kmh: Option<f64>,
+    /// Your own (non-folding) bike. No effect for `Folding`.
+    pub bike: OwnBike,
 }
 
 impl Request {
@@ -61,6 +92,7 @@ impl Request {
             min_transfer_min: None,
             ride_kmh: 18.0,
             fast_kmh: None,
+            bike: OwnBike::None,
         }
     }
 }
@@ -122,6 +154,32 @@ fn base_query(r: &Request) -> PlanQuery {
     q
 }
 
+fn meters(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let dx = (a.1 - b.1).to_radians() * a.0.to_radians().cos();
+    let dy = (a.0 - b.0).to_radians();
+    6_371_000.0 * (dx * dx + dy * dy).sqrt()
+}
+
+/// Your own bike is with you at the start (told so, or you start next to where it's parked).
+fn bike_here(r: &Request) -> bool {
+    match r.bike {
+        OwnBike::None => false,
+        OwnBike::Here => true,
+        OwnBike::Parked(at) => parse_coord(&r.from).is_some_and(|f| meters(f, at) < NEAR_BIKE_M),
+    }
+}
+
+/// Your own bike at the start: ride or walk to the first stop, the bike stays there (no bike
+/// transport needed), or ride all the way.
+fn bike_first(q: &mut PlanQuery, r: &Request) {
+    q.pre_transit_modes = vec!["WALK".into(), "BIKE".into()];
+    q.max_pre_transit_s = Some(r.max_bike_min * 60);
+    if !q.direct_modes.iter().any(|m| m == "BIKE") {
+        q.direct_modes.push("BIKE".into());
+    }
+    q.max_direct_s = Some(q.max_direct_s.unwrap_or(0).max(r.max_bike_min * 60));
+}
+
 /// Plans `r`, sorted by departure. May contain near-duplicates (same trains reached
 /// differently); the caller decides what to hide.
 pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
@@ -133,6 +191,10 @@ pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
             q.max_post_transit_s = Some(3600);
             q.direct_modes = vec!["WALK".into()];
             q.max_direct_s = Some(3600);
+            if bike_here(r) {
+                bike_first(&mut q, r);
+                q.cycling_speed = Some(r.ride_kmh / 3.6);
+            }
             let p = c.plan(&q)?;
             p.itineraries
                 .into_iter()
@@ -143,6 +205,12 @@ pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
         Carry::Folding => folding(c, r)?,
         Carry::Shared => shared(c, r)?,
     };
+    // Your parked bike is one more way to do the last stretch, next to the tab's own.
+    if let OwnBike::Parked(at) = r.bike {
+        if r.carry != Carry::Folding && !bike_here(r) {
+            out.extend(parked(c, r, at)?);
+        }
+    }
     out.sort_by_key(|j| (j.it.start_time, j.it.end_time));
     // The same vehicles reached the same way are one option (e.g. found by both the
     // normal and the fast search, or the same tour built from two walking plans).
@@ -185,6 +253,65 @@ fn folding(c: &Client, r: &Request) -> Result<Vec<Journey>> {
     Ok(out)
 }
 
+/// Your bike parked at `at` from an earlier trip: transit to there (getting to the first stop
+/// as the tab does), then ride it to the destination. Only when that ride is short enough
+/// to count as a last mile; otherwise the bike is no use for this trip.
+fn parked(c: &Client, r: &Request, at: (f64, f64)) -> Result<Vec<Journey>> {
+    let Some(dest) = parse_coord(&r.to) else {
+        return Ok(vec![]);
+    };
+    let s = Street::new(c);
+    let Some(ride) = s.route(at, dest, "BIKE", r.time.unwrap_or_else(Utc::now))? else {
+        return Ok(vec![]);
+    };
+    if ride.duration > i64::from(r.max_bike_min) * 60 {
+        return Ok(vec![]);
+    }
+    let mut q = base_query(r);
+    q.to = format!("{},{}", at.0, at.1);
+    if r.carry == Carry::Shared {
+        q.pre_transit_modes = vec!["WALK".into(), "RENTAL".into()];
+        q.max_pre_transit_s = Some(r.max_bike_min * 60);
+    } else {
+        q.max_pre_transit_s = Some(3600);
+    }
+    q.max_post_transit_s = Some(PARKED_WALK_MAX_S);
+    if r.arrive_by {
+        q.time = r
+            .time
+            .map(|t| t - Duration::seconds(ride.duration + UNLOCK_S));
+    }
+    let mut out = vec![];
+    for it in c.plan(&q)?.itineraries {
+        let Some(stop) = it.legs.iter().rev().find(|l| l.is_transit()) else {
+            continue;
+        };
+        let stop = stop.to.name.clone();
+        let unlocked = it.end_time + Duration::seconds(UNLOCK_S);
+        let Some(ride) = s.route(at, dest, "BIKE", unlocked)? else {
+            continue;
+        };
+        let mut legs = it.legs;
+        let mut bike = ride.legs;
+        if let Some(first) = bike.first_mut() {
+            // Unlocking happens on the bike leg.
+            first.start_time -= Duration::seconds(UNLOCK_S);
+            first.scheduled_start_time = first.start_time;
+            first.duration += UNLOCK_S;
+        }
+        legs.extend(bike);
+        out.push(Journey {
+            label: Some("Your bike".into()),
+            notes: vec![format!(
+                "Your bike is parked near {stop}: ride it the rest of the way ({} min).",
+                ride.duration / 60
+            )],
+            it: Itinerary::from_legs(legs),
+        });
+    }
+    Ok(out)
+}
+
 /// Shared bikes: MOTIS's rental plans (hub-only providers corrected), walking plans,
 /// and round-trip station bikes priced as a tour from every alighting stop.
 fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
@@ -198,11 +325,19 @@ fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
     q.max_post_transit_s = Some(r.max_bike_min * 60);
     q.direct_modes = vec!["WALK".into(), "RENTAL".into()];
     q.max_direct_s = Some(3600);
+    // MOTIS's cycling speed would also time the rentals, so own-bike legs keep its default
+    // here and the UI re-times them (ADR-013).
+    if bike_here(r) {
+        bike_first(&mut q, r);
+    }
     let rental = c.plan(&q)?;
 
     let mut walk_q = base_query(r);
     walk_q.max_pre_transit_s = Some(3600);
     walk_q.max_post_transit_s = Some(3600);
+    if bike_here(r) {
+        bike_first(&mut walk_q, r);
+    }
     let walk = c.plan(&walk_q)?.itineraries;
 
     let s = Street::new(c);
@@ -247,6 +382,39 @@ mod tests {
             trip_id: trip.map(Into::into),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn own_bike_only_before_transit() {
+        let mut r = Request::new("51.1,4.0".into(), "51.2,4.4".into(), Carry::Shared);
+        r.max_bike_min = 20;
+        let mut q = base_query(&r);
+        q.post_transit_modes = vec!["WALK".into(), "RENTAL".into()];
+        q.direct_modes = vec!["WALK".into()];
+        q.max_direct_s = Some(3600);
+        bike_first(&mut q, &r);
+        assert_eq!(q.pre_transit_modes, ["WALK", "BIKE"]);
+        assert_eq!(q.post_transit_modes, ["WALK", "RENTAL"]);
+        assert_eq!(q.direct_modes, ["WALK", "BIKE"]);
+        assert_eq!(q.max_pre_transit_s, Some(1200));
+        assert_eq!(q.max_direct_s, Some(3600));
+        assert!(!q.require_bike_transport);
+    }
+
+    #[test]
+    fn own_bike_parses_and_is_here_when_you_start_next_to_it() {
+        assert_eq!(OwnBike::parse("here"), Some(OwnBike::Here));
+        assert_eq!(OwnBike::parse(""), Some(OwnBike::None));
+        assert_eq!(
+            OwnBike::parse("51.1036,3.9917"),
+            Some(OwnBike::Parked((51.1036, 3.9917)))
+        );
+        assert_eq!(OwnBike::parse("station"), None);
+        let mut r = Request::new("51.1038,3.9920".into(), "51.2,4.4".into(), Carry::Foot);
+        r.bike = OwnBike::Parked((51.1036, 3.9917));
+        assert!(bike_here(&r));
+        r.from = "50.8453,4.3571".into();
+        assert!(!bike_here(&r));
     }
 
     #[test]

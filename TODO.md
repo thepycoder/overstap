@@ -45,6 +45,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Present walk-vs-wait trade-offs (long walk vs late bus) instead of a hard walk cap
 - [ ] Preprocess NMBS `transfers.txt` for personal transfer slack (MOTIS can only raise transfer times)
 - [ ] Bike-between-transit-legs stitching (folding bike mid-journey)
+- [x] Own (non-folding) bike with a place: with you (first leg) or parked (last leg from there), next to shared bikes (ADR-018)
+- [ ] Own bike mid-trip: pick it up at a station and ride to another station (bike between transit legs)
+- [ ] Bike-parking time at the station for the own-bike first leg (lock + walk to the platform)
 - [ ] Provider rules as a config file instead of constants in `lastmile.rs`
 - [ ] Rental dock availability at drop-off (docks free) and bike availability at pickup time
 - [ ] Benchmark harness vs Citymapper / NMBS planner on my real trips

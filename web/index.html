@@ -39,9 +39,21 @@
               <option value="arrive">Arrive by</option>
             </select>
             <input id="time" type="datetime-local" aria-label="Date and time" hidden>
+            <select id="bike-mode" aria-label="Your own bike" title="Where your own bike is. overstap uses it for whatever stretch it can reach; shared bikes or walking for the rest.">
+              <option value="none">No own bike</option>
+              <option value="here">My bike: with me</option>
+              <option value="parked">My bike: parked…</option>
+            </select>
             <button type="button" class="done" id="done">Done</button>
           </div>
         </form>
+        <div class="bikeat" id="bikeat" hidden>
+          <div class="field" data-role="bikeAt">
+            <span class="bike-ico" aria-hidden="true"></span>
+            <input id="bikeAt" type="text" placeholder="Where is your bike parked?" aria-label="Where your bike is parked" spellcheck="false">
+            <ul class="suggest" role="listbox" hidden></ul>
+          </div>
+        </div>
       </div>
       <nav class="tabs seg" id="tabs" aria-label="How you travel"></nav>
       <div class="saved" id="saved"></div>

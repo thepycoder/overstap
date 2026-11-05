@@ -276,3 +276,44 @@ for everything except place search.
 request (`/api/resolve`), and only works while Citymapper does. Queries and the map
 position go to Citymapper. MOTIS keeps `geocoding: true` for now, so there's no RAM
 saving yet; turning it off would remove the fallback, decided after measuring on the NAS.
+
+---
+
+## ADR-018 — Your own bike has a place; the planner picks the leg it's good for
+*2026-11-05 · accepted*
+
+**Context.** The tabs were either/or: the folding bike for the whole trip, or shared bikes /
+walking for every street leg. But your ordinary (non-folding) bike is often part of a trip
+too, and which leg depends on where it is: with you at home (ride to the station, leave it
+there), or still at Lokeren station from this morning (coming back from Brussels, the last
+leg is your bike). You don't know beforehand which leg that is, so you shouldn't have to
+assign it; you only know where the bike is.
+
+**Decision.** You tell overstap *where your bike is*: `none`, `here` (with you) or parked at a
+place (`bike=here` / `bike=lat,lng` in the API, `--bike here|lat,lon` in the CLI,
+`planner::OwnBike`). It never goes on board, and the tab (Shared bikes, On foot) covers
+every other leg:
+- **Here** (or you start within 300 m of where it's parked): `BIKE` joins MOTIS's
+  pre-transit and direct modes without `requireBikeTransport`, so the bike stays at the
+  boarding stop. Post-transit is untouched, so the Shared tab's last-mile fixes still apply.
+- **Parked at P**: besides the tab's own journeys, overstap plans to P (getting to the
+  first stop as the tab does, ≤ 10 min walk from the last stop to the bike) and adds the ride
+  from P to the destination (+1 min to unlock), only when that ride fits the max bike time.
+  Arriving by T plans to P by T minus the ride. Both kinds come back in one list, so the
+  timetable shows your bike next to the shared bikes.
+
+The web UI keeps the bike's place in the browser (a select next to the time, and a place
+field when it's parked) because it's a fact about the world, not about one search. Starting
+Ride mode on a route moves the bike along: to the station it's left at, or to the
+destination when you ride it there (so the next trip from there sees it "here"). Ride-mode
+plan B keeps a parked bike (it's still waiting) but drops a bike that was with you at the
+start (it's parked behind you). Own-bike legs are re-timed at your speed in the UI (any
+`BIKE` leg without a rental is yours); On foot also sends the speed to MOTIS, Shared doesn't,
+because MOTIS's cycling speed would also time the rentals.
+
+**Consequences.** One extra MOTIS query (plus a cached street route) when the bike is
+parked. The bike is used for one leg per trip: not picked up mid-trip and ridden between
+two stations, and not taken back from the destination. No locking time at the station
+for the "here" case, and the 25 km/h fast-rider search only runs for the folding bike.
+Moving the bike happens when you start a ride, not when you actually travel: change it by
+hand if you didn't go.

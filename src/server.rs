@@ -6,7 +6,7 @@
 //! | `GET /api/search?q=&near=lat,lng` | place search (Citymapper, else MOTIS; `places.rs`) |
 //! | `GET /api/resolve?id=` | coordinates of a Citymapper search hit |
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
-//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=` | journeys, MOTIS-shaped |
+//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there) |
 //! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks, cancellations) |
 //! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change, bikes at rental pickups |
 //! | `GET /healthz` | MOTIS reachable? |
@@ -15,7 +15,7 @@
 
 use crate::motis::{Client, Leg};
 use crate::places::Places;
-use crate::planner::{self, Carry};
+use crate::planner::{self, Carry, OwnBike};
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -256,8 +256,14 @@ fn journeys(c: &Client, q: &HashMap<String, String>) -> Result<Value> {
     r.max_bike_min = num(q, "maxbike")?.unwrap_or(45).clamp(5, 120);
     r.ride_kmh = num(q, "kmh")?.unwrap_or(18.0_f64).clamp(8.0, 40.0);
     r.fast_kmh = num::<f64>(q, "fast")?.map(|v| v.clamp(8.0, 45.0));
+    r.bike = own_bike(q.get("bike"))?;
     let js = planner::plan(c, &r)?;
     Ok(json!({ "journeys": js }))
+}
+
+fn own_bike(v: Option<&String>) -> Result<OwnBike> {
+    v.map_or(Some(OwnBike::None), |s| OwnBike::parse(s))
+        .ok_or_else(|| bad("bike must be here or lat,lng (where it's parked)"))
 }
 
 #[derive(Deserialize)]
@@ -292,6 +298,9 @@ struct RideRequest {
     mode: Option<String>,
     /// Destination, "lat,lng".
     to: String,
+    /// Where your own bike is parked ("lat,lng"), if the route ends on it. A bike you had
+    /// at the start is parked behind you by now, so it's never sent.
+    bike: Option<String>,
     #[serde(default)]
     changes: Vec<ChangeRequest>,
     #[serde(default)]
@@ -330,6 +339,10 @@ fn ride(c: &Client, body: &str) -> Result<Value> {
     if planner::parse_coord(&r.to).is_none() {
         return Err(bad("to must be lat,lng"));
     }
+    let bike = match own_bike(r.bike.as_ref())? {
+        OwnBike::Here => OwnBike::None,
+        b => b,
+    };
     let changes: Vec<ChangeRequest> = r.changes.into_iter().take(4).collect();
     // One planner run per change, in parallel: each is a few MOTIS calls.
     let fallbacks: Vec<Option<planner::Journey>> = std::thread::scope(|scope| {
@@ -340,6 +353,7 @@ fn ride(c: &Client, body: &str) -> Result<Value> {
                 scope.spawn(move || -> Option<planner::Journey> {
                     let mut q = planner::Request::new(ch.from.clone(), to, carry);
                     q.time = Some(ch.after + chrono::Duration::seconds(60));
+                    q.bike = bike;
                     q.window_min = 90;
                     let js = planner::plan(c, &q)
                         .map_err(|e| eprintln!("  ride: plan B from {}: {e:#}", ch.from))

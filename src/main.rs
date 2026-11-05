@@ -70,6 +70,11 @@ enum Cmd {
         /// Your cycling speed on your own (folding) bike, km/h.
         #[arg(long, default_value_t = 18.0)]
         kmh: f64,
+        /// Your own (non-folding) bike: "here" (with you: ride it to the first stop and
+        /// leave it there) or "lat,lon" (parked there: ride it from there on).
+        /// `--carry` is for the rest of the journey.
+        #[arg(long, value_parser = parse_own_bike)]
+        bike: Option<planner::OwnBike>,
     },
     /// Log NMBS + De Lijn GTFS-RT history to SQLite (runs until stopped).
     RtLog {
@@ -198,6 +203,7 @@ fn main() -> Result<()> {
             show,
             max_bike,
             kmh,
+            bike,
         } => {
             let mut r =
                 planner::Request::new(resolve_place(&c, &from)?, resolve_place(&c, &to)?, carry);
@@ -206,6 +212,7 @@ fn main() -> Result<()> {
             r.min_transfer_min = min_transfer;
             r.max_bike_min = max_bike;
             r.ride_kmh = kmh;
+            r.bike = bike.unwrap_or_default();
             let mut js = planner::plan(&c, &r)?;
             // Best first: earliest arrival, then latest departure.
             js.sort_by_key(|j| (j.it.end_time, -j.it.start_time.timestamp()));
@@ -269,4 +276,8 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn parse_own_bike(s: &str) -> Result<planner::OwnBike, String> {
+    planner::OwnBike::parse(s).ok_or_else(|| "expected \"here\" or lat,lon".into())
 }

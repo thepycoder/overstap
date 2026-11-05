@@ -69,6 +69,10 @@ scale in time, packed into lanes like a calendar; tap one for the stop-by-stop d
 the map. Tabs: **Folding bike** (own bike on both ends and on board, timed at 18 km/h;
 trains you'd only catch at 25 km/h are marked with that speed), **Shared bikes**
 (Blue-bike round trips, Donkey via hub, Hoppy, Velo… with their parking rules), **On foot**.
+**My bike** (next to the time, for Shared bikes and On foot): say where your own bike is,
+with you or parked at a station, and overstap uses it for the leg it can reach (ride to the
+station and leave it there, or pick it up there and ride the last stretch), next to the
+shared-bike options. Starting a ride moves the bike along with the route.
 Live delays, cancellations and tracks refresh every minute. Saved routes and recent
 places stay in the browser.
 
@@ -83,7 +87,7 @@ when the next move, a change's spare time or the arrival changes, or 2 min befor
 the RT logger). See `deploy/nas/README.md`.
 
 API (all JSON; legs are MOTIS itineraries passed through, plus `label`/`notes` where
-overstap changed them): `GET /api/journeys?start=lat,lng&end=lat,lng&mode=folding|shared|foot&time=RFC3339&arrive=1`,
+overstap changed them): `GET /api/journeys?start=lat,lng&end=lat,lng&mode=folding|shared|foot&time=RFC3339&arrive=1&bike=here|lat,lng`,
 `POST /api/live {"trips":[tripId…]}`, `GET /api/search?q=&near=`, `GET /api/resolve?id=`, `GET /api/reverse?lat=&lng=`,
 `GET /api/config`, `GET /healthz`. See `src/server.rs`. Place search asks Citymapper first and
 falls back to the MOTIS geocoder (ADR-017); `--no-citymapper` uses MOTIS only.
