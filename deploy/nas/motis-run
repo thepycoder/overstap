@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Container entrypoint for the MOTIS service: prepare /data/motis, then hand over to run.sh
+# (first import if needed, server loop, nightly update at UPDATE_AT).
+set -euo pipefail
+mkdir -p "$MOTIS_DIR"
+cd "$MOTIS_DIR"
+# The config ships with the image; a copy in the volume wins, so it can be edited on the NAS.
+[ -e config.yml ] || cp /app/motis/config.yml config.yml
+ln -sfn /app/motis-ui ui
+exec /app/motis/run.sh

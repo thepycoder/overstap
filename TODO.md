@@ -11,7 +11,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Verify GBFS per operator (Blue-bike, Velo, Donkey, Dott all public)
 - [ ] Register a `bmc-partner-key` on the Belgian Mobility portal (De Lijn/TEC/STIB) in case anonymous access closes
 - [ ] Find Donkey Republic Mechelen feed (bikes appear under `donkey_antwerp`; confirm coverage)
-- [ ] **GTFS-RT logger** (ADR-006): poll NMBS + De Lijn RT every 30–60 s, store raw protobuf + parsed delays. Run on an always-on box
+- [x] **GTFS-RT logger** (ADR-006, ADR-015): `overstap rt-log`, changes only in SQLite + raw snapshots
+- [ ] Run the logger on the NAS (deploy/nas) and check real volume after a day; add De Lijn/NMBS alerts feeds
 
 ## Phase 1 — MOTIS running
 
@@ -19,9 +20,10 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] `deploy/motis/config.yml` + `fetch-data.sh`
 - [x] Check the OpenAPI spec (see design §4: more is built in than assumed)
 - [x] Run the three use cases → `docs/results-2026-10-29.md`
-- [ ] Pick a permanent host (homelab/VPS; 2 GB RAM serving is enough, ~4 GB import)
+- [x] Deployment bundle for the NAS: one image, compose with motis/overstap/rtlog, GHCR workflow (deploy/nas, ADR-014)
+- [ ] Deploy on the NAS + Cloudflare hostname (needs the user: tunnel config, GHCR package visibility)
 - [ ] Enable tiles for the web UI
-- [ ] Nightly re-import (GTFS changes daily; De Lijn RT matching dropped to 75 % with a week-old import)
+- [x] Nightly re-import with health-checked swap (`deploy/motis/update.sh`, `run.sh`): RT matching 74 → 99 % (De Lijn), 92 → 98 % (NMBS)
 - [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
 - [x] Hoppy Kempen as a generated static GBFS feed (`tools/hoppy_gbfs.py`, ADR-011)
 - [ ] Hoppy: ask Hoppy / IOK (Vervoerregio Kempen) for a public GBFS feed with live availability
@@ -52,13 +54,14 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Delay distributions from logger history
 - [ ] P(transfer holds) and expected-arrival scoring
 - [ ] Contingency policies (decision trees) as output, via `numLegAlternatives`
-- [ ] Watch mode: re-run on every RT update, push notification when the best option changes
+- [~] Watch mode: ride mode v0 re-checks every 30 s and alerts from the page (ADR-016)
+- [ ] Server-side ride watcher + Web Push (VAPID), so alerts arrive with the app closed
+- [ ] Auto-switch to plan B when a connection is certainly lost (now: one tap)
 
 ## UI (see docs/ui-concepts.md)
 
 - [x] Web UI v0: bike-transit lane timetable on overstap data (`overstap serve`, `web/`, ADR-012)
-- [ ] Deploy next to MOTIS on the NAS (Docker image with motis + overstap, cloudflared like bike-transit)
-- [ ] PWA manifest + icon, so it opens full-screen from the home screen
+- [x] PWA manifest + icon + service worker
 - [ ] Boarding buffer for the folding bike (fold + platform): bike legs end N min before departure
 - [ ] Shared tab: search e-bike rentals at 20 km/h too (ADR-013); parallelise the street routes
 - [ ] Show rental availability (bikes at pickup, docks at drop-off) on rental blocks
@@ -67,7 +70,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Alternatives for a selected route (canvas round 4): per-leg variants, using MOTIS `numLegAlternatives`
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
-- [ ] Ride mode: live position on the space-time line, precomputed fallback per change, buzz only when action/spare/arrival changes
+- [x] Ride mode v0: next move + countdown, strip to arrival, spare bars per change, plan B per change, bikes at pickup, alerts on changed facts (ADR-016)
+- [ ] Ride mode: GPS position instead of the clock (detect getting off early / overshooting)
+- [ ] Ride mode: plan B for the last mile (no bikes → other operator/walk), 'Something's wrong' flows from the canvas
 - [ ] Log GBFS station stock (predict empty stations)
 - [ ] Post-trip review: user-reported delays for vehicles without live data
 

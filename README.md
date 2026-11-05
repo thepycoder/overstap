@@ -28,7 +28,8 @@ TODO.md               living task list
 docs/design.md        problem, use cases, architecture, algorithm background
 docs/data-sources.md  every feed/API we plan to use, with status and caveats
 docs/decisions.md     decision log (ADR-style) — why things are the way they are
-deploy/motis/         config.yml + fetch-data.sh to self-host MOTIS
+deploy/motis/         config.yml, fetch-data.sh (setup), update.sh (nightly refresh), run.sh (supervisor)
+deploy/nas/           compose.yaml + README for the home NAS (Dockerfile at the root)
 tools/                data preprocessing (OSM cleaner, Hoppy GBFS generator)
 src/                  Rust orchestration layer: MOTIS client, planner, last-mile rules,
                       overshoot/delay, web server (server.rs)
@@ -53,6 +54,10 @@ overstap overshot <dest> --trip <tripId> --now "2026-10-30 08:42" [--folding] [-
 # Web UI + JSON API on http://127.0.0.1:8737 (serves ./web)
 overstap serve [--listen 0.0.0.0:8737] [--web path/to/web]
 
+# GTFS-RT history (delays, cancellations) for reliability scoring
+overstap rt-log --db rt.sqlite --raw-dir raw     # runs until stopped
+overstap rt-report --db rt.sqlite
+
 cargo test   # unit tests + end-to-end tests (skipped when MOTIS is down)
 ```
 
@@ -66,6 +71,16 @@ trains you'd only catch at 25 km/h are marked with that speed), **Shared bikes**
 (Blue-bike round trips, Donkey via hub, Hoppy, Velo… with their parking rules), **On foot**.
 Live delays, cancellations and tracks refresh every minute. Saved routes and recent
 places stay in the browser.
+
+**Ride mode** (the Ride button on a route): a big countdown to your next move, the rest of
+the trip to scale, spare time per change (grey = the walk between platforms), plan B per
+change ("If missed: IC 21:58 → arrive 23:54"), bikes at a shared-bike pickup, and an alert
+when the next move, a change's spare time or the arrival changes, or 2 min before you get off.
+
+## Running it for real
+
+`deploy/nas/`: one image, three containers (MOTIS with a nightly self-update, the web UI,
+the RT logger). See `deploy/nas/README.md`.
 
 API (all JSON; legs are MOTIS itineraries passed through, plus `label`/`notes` where
 overstap changed them): `GET /api/journeys?start=lat,lng&end=lat,lng&mode=folding|shared|foot&time=RFC3339&arrive=1`,

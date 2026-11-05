@@ -14,7 +14,10 @@ a folding bike and walking; re-plans live when delayed or stranded.
 - **Web UI** (`web/`, vanilla JS + Leaflet, no build step) served by `overstap serve` (`server.rs`,
   tiny_http, port 8737). Ported from the user's earlier Citymapper-based app (laptop
   `~/Projects/bike-transit`). The API passes MOTIS itineraries through; `web/app.js` `normLeg()`
-  is the only adapter (ADR-012).
+  is the only adapter (ADR-012). Ride mode (`renderRide`, `/api/ride` for plan B) in the same files.
+- **RT logger**: `overstap rt-log` → SQLite (`rtlog.rs`, hand-written prost types in `gtfs_rt.rs`), `rt-report`.
+- **Deploy**: `deploy/motis/update.sh` (nightly refresh + swap + rollback), `run.sh` (supervisor);
+  `Dockerfile` + `deploy/nas/compose.yaml` (motis, overstap, rtlog), image built by `.github/workflows/image.yml`.
 - Read first: `docs/design.md`, `docs/decisions.md` (ADRs — add one for every real decision),
   `docs/data-sources.md`, `TODO.md`, `docs/ui-concepts.md`.
 
@@ -26,6 +29,10 @@ a folding bike and walking; re-plans live when delayed or stranded.
   background processes die after ~2 h, so restart `motis server` when needed.
 - `motis server` reads `data/config.yml` (copied at import), not `config.yml`: a GBFS feed added
   after import must go into `data/config.yml` too (or re-import).
+- Docker works in cloud workspaces after starting `dockerd` (background); builds need the
+  proxy CA as a build secret and HTTPS apt sources — keep such tweaks in a scratch copy of the
+  Dockerfile, not the repo one. Containers' own HTTPS fails there (TLS interception); fine at home.
+- Ride mode can be tested with Playwright's `page.clock.setFixedTime` to jump into a trip.
 - UI testing: Playwright, 390×844 touch viewport (`hasTouch`, `isMobile`), scroll with CDP
   `Input.dispatchTouchEvent`, press with `tap()`; flick the timetable to both ends; also 1280×800.
 - Don't `pkill -f "overstap serve"`/`"motis server"` from a shell whose own command line contains

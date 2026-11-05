@@ -9,3 +9,4 @@ deploy/motis/ui/
 deploy/motis/tiles-profiles/
 # secrets
 .env
+deploy/nas/data/

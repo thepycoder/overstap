@@ -6,12 +6,14 @@
 //! 3. scoring: time, transfers, cost, delay risk
 //! 4. policy building: contingency branches on delay events
 
+mod gtfs_rt;
 mod lastmile;
 mod model;
 mod motis;
 mod overshoot;
 mod planner;
 mod render;
+mod rtlog;
 mod server;
 
 use anyhow::{bail, Result};
@@ -67,6 +69,35 @@ enum Cmd {
         /// Your cycling speed on your own (folding) bike, km/h.
         #[arg(long, default_value_t = 18.0)]
         kmh: f64,
+    },
+    /// Log NMBS + De Lijn GTFS-RT history to SQLite (runs until stopped).
+    RtLog {
+        #[arg(long, default_value = "rt.sqlite", env = "OVERSTAP_RT_DB")]
+        db: std::path::PathBuf,
+        /// Seconds between polls.
+        #[arg(long, default_value_t = 60)]
+        interval: u64,
+        /// Also keep the raw feeds (gzipped) in this directory.
+        #[arg(long, env = "OVERSTAP_RT_RAW")]
+        raw_dir: Option<std::path::PathBuf>,
+        /// Minutes between raw snapshots (0 = none).
+        #[arg(long, default_value_t = 30)]
+        raw_every: i64,
+        /// Days of raw snapshots to keep.
+        #[arg(long, default_value_t = 30)]
+        raw_keep_days: u64,
+        /// Store a stop again only when a delay moved this many seconds (De Lijn's GPS-based
+        /// delays drift by seconds every minute; NMBS's move in whole minutes).
+        #[arg(long, default_value_t = 60)]
+        min_change: i64,
+        /// Poll once and exit.
+        #[arg(long)]
+        once: bool,
+    },
+    /// Summarise a GTFS-RT log database.
+    RtReport {
+        #[arg(long, default_value = "rt.sqlite", env = "OVERSTAP_RT_DB")]
+        db: std::path::PathBuf,
     },
     /// Serve the web UI and its JSON API.
     Serve {
@@ -194,6 +225,24 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Serve { listen, web } => server::run(c, &listen, &web)?,
+        Cmd::RtLog {
+            db,
+            interval,
+            raw_dir,
+            raw_every,
+            raw_keep_days,
+            min_change,
+            once,
+        } => rtlog::run(rtlog::Options {
+            db,
+            interval_s: interval,
+            raw_dir,
+            raw_every_min: raw_every,
+            raw_keep_days,
+            min_change_s: min_change,
+            once,
+        })?,
+        Cmd::RtReport { db } => rtlog::report(&db)?,
         Cmd::Overshot {
             to,
             trip,

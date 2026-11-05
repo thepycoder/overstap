@@ -191,3 +191,66 @@ human-powered rentals keep MOTIS's time.
 **Consequences.** E-bike options that only work at 20 km/h (e.g. Hoppy Retie → Mol for
 IC 20:58) are still missed, because MOTIS searches rentals at 15 km/h. Fix: a second
 shared search with `cyclingSpeed` for e-bike providers, if MOTIS applies it to rentals.
+
+---
+
+## ADR-014 — Nightly re-import with a health-checked swap; one image for the NAS
+*2026-11-05 · accepted*
+
+**Context.** GTFS-RT updates name trips by the static timetable's ids. With a week-old
+import De Lijn matching fell to 74 % (NMBS 92 %); after a fresh import: 99 % and 98 %.
+`first_day: TODAY` also means the 14-day window must move. MOTIS keeps hashes of every
+input and redoes only the import steps whose inputs changed.
+
+**Decision.**
+- `deploy/motis/update.sh`: download timetables (daily) and OSM (weekly), keeping the old
+  file if a download fails or is broken; regenerate Hoppy; import into a *copy* of `data/`
+  (so unchanged steps are reused: ≈ 1 min daily); swap; restart; check a real query
+  (Brussel-C → Antwerpen-C tomorrow); roll back on failure.
+- `run.sh` supervises: first import, server loop (restart = kill the PID), nightly update
+  at `UPDATE_AT`. It is the container entrypoint (`motis-run`), so no host cron is needed.
+- One Debian-slim image with MOTIS (copied from the official 2.11.4 image), overstap, web
+  and tools; compose runs it three times (motis, overstap, rtlog). Built by GitHub Actions.
+
+**Consequences.** ≈ 10–20 s of MOTIS downtime per night, at 03:30. Disk needs room for
+two copies of `data/` (≈ 1.4 GB each). Tested in a cloud workspace with Docker: build,
+compose up, update with downloads, update with failed downloads (kept old data).
+
+---
+
+## ADR-015 — GTFS-RT history: changes only, in SQLite, plus sparse raw snapshots
+*2026-11-05 · accepted*
+
+**Context.** Reliability scoring (Phase 3) needs delay histories. Per minute NMBS sends
+≈ 4k stop predictions (all with delay and time); De Lijn ≈ 80k stop entries of which
+≈ 90 % are `NO_DATA`, with GPS-based delays that drift by seconds.
+
+**Decision.** `overstap rt-log` polls both feeds every 60 s and writes a row only when a
+stop first appears, changes status, or a delay moves ≥ 60 s; trip status changes
+(cancellations) separately; strings interned in `trips`/`stops` tables. Raw feeds are kept
+gzipped every 30 min for 30 days, so the parser can be improved and re-run. The GTFS-RT
+types are hand-written prost structs (`src/gtfs_rt.rs`): no `protoc` at build time.
+
+**Consequences.** Measured at morning rush: ≈ 1,550 rows/min, ≈ 110 bytes/row →
+estimated 50–70 MB/day. Rows are predictions as seen at fetch time: "final" delays are the
+last row before the predicted time passed (`rt-report` uses that). Joining to the static
+schedule (route, scheduled times for De Lijn's NO_DATA stops) is left to analysis, which
+needs the matching GTFS: keep dated copies of the zips if that becomes a problem.
+
+---
+
+## ADR-016 — Ride mode alerts from the page first, Web Push later
+*2026-11-05 · accepted*
+
+**Context.** Ride mode should buzz only when the next move, the spare time at the next
+change or the arrival changes (canvas "Ride_Glance"), and plan B must be ready.
+
+**Decision.** v0 runs in the browser: the ride page refreshes live times every 30 s and
+plan B (`POST /api/ride`, one planner run per change, in parallel) every 3 min, compares
+the three facts and shows a notification through the service worker (`web/sw.js`), plus
+a "get off soon" alert 2 min before each stop. Switching to plan B is one tap (no
+automatic switch yet).
+
+**Consequences.** Alerts arrive while the page is open or recently backgrounded; a phone
+that freezes the tab misses them. Real push needs a server-side watcher (rides stored in
+overstap, evaluated every minute, Web Push with VAPID keys) — the next step.

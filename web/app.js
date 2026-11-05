@@ -83,6 +83,7 @@ const state = {
   hot: null,
   showAll: false,
   savedId: null,
+  rideId: null,
   pendingRoute: null,
   editing: false,
   ppm: { h: 6, v: 4 },
@@ -596,6 +597,7 @@ function currentDetail() {
 }
 
 function openSaved(id) {
+  state.rideId = null;
   state.savedId = id;
   state.editing = false;
   $('#savedMenu').hidden = true;
@@ -617,7 +619,8 @@ function writeHash() {
   if (state.tab !== DEFAULT_TAB) p.set('tab', state.tab);
   if (state.timeMode !== 'now' && state.time) { p.set('when', state.timeMode); p.set('t', state.time); }
   // The open route, so a reload (or the phone discarding the tab) brings you straight back.
-  if (state.savedId) p.set('saved', state.savedId);
+  if (state.rideId) p.set('ride', state.rideId);
+  else if (state.savedId) p.set('saved', state.savedId);
   else if (state.selected || state.pendingRoute) p.set('route', state.selected || state.pendingRoute);
   history.replaceState(null, '', p.toString() ? '#' + p.toString() : location.pathname);
 }
@@ -636,6 +639,7 @@ function readHash() {
   state.time = state.timeMode === 'now' ? '' : p.get('t');
   state.savedId = savedEntries().some(s => s.id === p.get('saved')) ? p.get('saved') : null;
   state.pendingRoute = p.get('route');
+  state.rideId = savedEntries().some(s => s.id === p.get('ride')) ? p.get('ride') : null;
 }
 
 const samePlace = (a, b) => a && b && Math.abs(a.coords[0] - b.coords[0]) < 1e-4 && Math.abs(a.coords[1] - b.coords[1]) < 1e-4;
@@ -914,8 +918,9 @@ function legTitle(l, nm, j) {
 
 // The stage shows the timetable for results, and the map before a search or for a route's details.
 function render() {
-  const open = currentDetail();
-  const mode = open ? 'detail' : !state.from || !state.to ? 'idle' : 'results';
+  const riding = currentRide();
+  const open = riding || currentDetail();
+  const mode = riding ? 'ride' : open ? 'detail' : !state.from || !state.to ? 'idle' : 'results';
   const stage = mode === 'results' ? 'schedule' : 'map';
   if (mode !== 'results') setHeader(true);
   Object.assign(document.body.dataset, { mode, stage });
@@ -928,9 +933,10 @@ function render() {
   renderNotice();
   if (mode === 'idle') renderIntro();
   if (mode === 'detail') renderDetail(open);
+  if (mode === 'ride') renderRide(riding);
   // A saved route can be from another search; its own line shows the ends, so hide the search pins.
   for (const role of ['from', 'to']) {
-    if (open?.saved) { markers[role]?.remove(); delete markers[role]; } else placeMarker(role);
+    if (open?.saved || riding) { markers[role]?.remove(); delete markers[role]; } else placeMarker(role);
   }
   if (stage === 'schedule') renderSchedule();
   else requestAnimationFrame(() => { map.invalidateSize(); drawJourney(open); });
@@ -1402,7 +1408,8 @@ function renderDetail(j) {
   const open = el.dataset.shown === j.key ? [...el.querySelectorAll('details')].map(d => d.open) : [];
   el.dataset.shown = j.key;
   el.innerHTML = `<div class="d-top">${back}
-      <button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button></div>
+      <span class="d-btns"><button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
+      <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button></span></div>
     <div class="d-head">
       ${j.saved ? `<div class="d-route">${esc(dayLabel(j.start))}${esc(j.from.name)} → ${esc(j.to.name)}</div>` : ''}
       <div class="card-head">${timesHTML(j, f)}<span class="dur">${fmtDur(j.duration)}</span></div>
@@ -1414,6 +1421,296 @@ function renderDetail(j) {
     <ol class="tl">${rows.join('')}</ol>`;
   el.querySelectorAll('details').forEach((d, k) => { if (open[k]) d.open = true; });
 }
+
+// ---------- ride mode ----------
+//
+// While you travel: one big countdown to your next move, a strip from now to arrival, and
+// for every change still ahead the spare time (grey = the walk between platforms) and what
+// to do if you miss it. Live times refresh every RIDE_REFRESH; plan B and bike counts every
+// few minutes. The phone buzzes only when one of three facts changes (next move, spare time
+// at the next change, arrival), plus once when it's time to get off.
+
+const RIDE_REFRESH = 30 * 1000;
+const RIDE_EXTRAS_EVERY = 3 * MIN;
+const SPARE_SCALE_MIN = 15; // a spare bar's full width
+const GET_OFF_WARN = 2 * MIN;
+
+const rideState = { extras: null, extrasAt: 0, extrasKey: '', loading: false, facts: null, change: null, warned: new Set() };
+
+function currentRide() {
+  if (!state.rideId) return null;
+  const entry = savedEntries().find(s => s.id === state.rideId);
+  return entry ? savedJourney(entry) : null;
+}
+
+const legLabel = l => (l.kind === 'transit' ? `${l.route.display_name || ''}${l.headsign ? ` to ${l.headsign}` : ''}`
+  : l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: 'your bike', walk: 'walk', scooter: 'scooter' }[l.kind] || l.kind);
+
+// Where you are in the journey (by the clock) and what comes next.
+function rideModel(j, now = Date.now()) {
+  const legs = j.legs;
+  const names = legNames(j);
+  const transit = legs.map((l, k) => k).filter(k => legs[k].kind === 'transit');
+  const cur = legs.findIndex(l => now < +l.arr);
+  const between = (a, b) => sum(legs.slice(a + 1, b).map(l => l.dur));
+  const after = k => {
+    const n = legs.slice(k + 1).find(l => !l.transfer && (l.kind !== 'walk' || l.dur >= 3 * 60));
+    if (!n) return k === legs.length - 1 ? 'you\'ve arrived' : '';
+    if (n.kind === 'transit') {
+      const walk = between(k, legs.indexOf(n));
+      return `${walk >= 60 ? `walk ${Math.round(walk / 60)}′ to the` : 'change to the'} ${n.route.display_name || 'next ride'}`;
+    }
+    return `${n.kind === 'walk' ? 'walk' : n.rental ? `${n.rental.systemName || 'shared bike'}` : 'ride'} ${Math.round(n.dur / 60)}′`;
+  };
+  let next;
+  if (now < +j.start) {
+    const l = legs[0];
+    next = { at: j.start, title: l.kind === 'transit' ? `Board the ${legLabel(l)}` : `Leave ${j.from.name}`,
+      sub: l.kind === 'transit' ? names[0].from : `${l.kind === 'walk' ? 'walk' : 'ride'} ${Math.round(l.dur / 60)}′ to ${names[0].to || 'the station'}` };
+  } else if (cur === -1) {
+    next = { at: null, title: `Arrived at ${j.to.name}`, sub: '' };
+  } else {
+    const l = legs[cur];
+    if (l.kind === 'transit' && now >= +l.dep) {
+      next = { at: l.arr, title: `Get off at ${names[cur].to}`, sub: after(cur), getOff: cur };
+    } else {
+      const t = l.kind === 'transit' ? cur : transit.find(k => k > cur);
+      next = t != null
+        ? { at: legs[t].dep, title: `Board the ${legLabel(legs[t])}`, sub: [names[t].from, legs[t].live?.platform && `track ${legs[t].live.platform}`].filter(Boolean).join(' · ') }
+        : { at: j.end, title: `Arrive at ${j.to.name}`, sub: `${legLabel(l)} ${Math.round((j.end - now) / MIN)}′` };
+    }
+  }
+  // Changes still ahead: arriving with leg a, leaving with leg b.
+  const changes = [];
+  for (let i = 1; i < transit.length; i++) {
+    const a = transit[i - 1];
+    const b = transit[i];
+    if (+legs[b].dep < now) continue;
+    const walk = between(a, b);
+    changes.push({ a, b, place: names[b].from, walk, spare: (legs[b].dep - legs[a].arr) / 1000 - walk, leg: legs[b] });
+  }
+  // A shared bike after the last ride: will there be one?
+  const lastT = transit[transit.length - 1] ?? -1;
+  const pickup = legs.findIndex((l, k) => k > lastT && l.rental);
+  return { next, changes, pickup: pickup >= 0 && +legs[pickup].dep > now - 5 * MIN ? pickup : -1, cur };
+}
+
+const spareCls = s => (s < 120 ? 'bad' : s < 300 ? 'tight' : 'ok');
+const mins = sec => `${Math.round(sec / 60)}′`;
+
+function countdownHTML(at, now) {
+  if (!at) return '<div class="r-count done">✓</div>';
+  const m = Math.max(0, Math.round((at - now) / MIN));
+  if (m >= 60) return `<div class="r-count"><b>${Math.floor(m / 60)}</b><span>h</span><b>${String(m % 60).padStart(2, '0')}</b></div>`;
+  return `<div class="r-count"><b>${m < 1 ? 'now' : m}</b>${m < 1 ? '' : '<span>min</span>'}</div>`;
+}
+
+// The rest of the journey to scale, from now (or the start) to arrival.
+function rideStripHTML(j, now) {
+  const t0 = Math.max(now, +j.start);
+  const total = Math.max(+j.end - t0, MIN);
+  const segs = j.legs.filter(l => +l.arr > t0).map(l => {
+    const a = Math.max(+l.dep, t0);
+    const left = ((a - t0) / total) * 100;
+    const width = Math.max(((l.arr - a) / total) * 100, 0.8);
+    return `<span class="seg-b ${l.kind}${l.kmh ? ' fast' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;${blockColors(l)}"></span>`;
+  }).join('');
+  const hours = [];
+  for (let h = Math.ceil(t0 / (60 * MIN)) * 60 * MIN; h < +j.end; h += 60 * MIN) hours.push(`<i style="left:${((h - t0) / total * 100).toFixed(1)}%">${fmtTime(new Date(h))}</i>`);
+  return `<div class="strip r-strip">${segs}</div><div class="r-strip-lbl"><i style="left:0">${now < +j.start ? fmtTime(j.start) : 'now'}</i>${hours.join('')}<i style="right:0">${fmtTime(j.end)}</i></div>`;
+}
+
+function changeCardHTML(ch, k, fb) {
+  const scale = Math.max(SPARE_SCALE_MIN * 60, ch.walk + Math.max(ch.spare, 0));
+  const walkW = (ch.walk / scale) * 100;
+  const spareW = (Math.max(ch.spare, 0) / scale) * 100;
+  const l = ch.leg;
+  const delay = l.delay >= 1 ? ` <em class="dly">+${l.delay}</em>` : '';
+  const spareTxt = l.cancelled ? 'cancelled' : ch.spare < 0 ? `${mins(-ch.spare)} short` : `${mins(ch.spare)} spare`;
+  let plan;
+  if (fb === undefined) plan = '<span class="muted">Looking for a plan B…</span>';
+  else if (!fb) plan = '<span class="muted">No other way on from here tonight</span>';
+  else {
+    const first = fb.transit[0];
+    const late = Math.round((fb.end - currentRide().end) / MIN);
+    plan = `<button type="button" class="r-planb" data-planb="${k}">If missed: ${first ? `${esc(first.route.display_name)} ${fmtTime(first.dep)}` : esc(legLabel(fb.legs[0]))} → arrive ${fmtTime(fb.end)}
+      <b class="${late >= 15 ? 'bad' : 'tight'}">${late >= 0 ? '+' : ''}${late}′</b></button>`;
+  }
+  return `<div class="r-card ${l.cancelled ? 'bad' : spareCls(ch.spare)}">
+    <div class="r-card-head"><span><b>${fmtTime(ch.leg.dep)} ${esc(ch.place || '')}</b> → ${pill(l.route)}${delay}${l.live?.platform ? ` <span class="trk">${esc(l.live.platform)}</span>` : ''}</span><b class="r-spare">${spareTxt}</b></div>
+    <div class="r-bar"><span class="walk" style="width:${walkW.toFixed(1)}%"></span><span class="spare" style="width:${spareW.toFixed(1)}%"></span></div>
+    <div class="r-card-foot">${plan}</div></div>`;
+}
+
+function pickupCardHTML(j, k, info) {
+  const l = j.legs[k];
+  const r = l.rental;
+  const bikes = info === undefined ? '' : !info ? '<b class="r-spare bad">no station found</b>'
+    : `<b class="r-spare ${info.bikes > 2 ? 'ok' : info.bikes > 0 ? 'tight' : 'bad'}">${info.bikes} bike${info.bikes === 1 ? '' : 's'}</b>`;
+  const rule = r.returnConstraint === 'ROUNDTRIP_STATION' ? 'bring it back here' : r.toStationName ? `park at ${esc(r.toStationName)}` : '';
+  return `<div class="r-card"><div class="r-card-head"><span><b>${fmtTime(l.dep)} ${esc(r.fromStationName || legNames(j)[k].from || '')}</b> → ${esc(r.systemName || r.providerId)} ${mins(l.dur)}</span>${bikes}</div>
+    ${rule ? `<div class="r-card-foot muted">${rule}</div>` : ''}</div>`;
+}
+
+// If a change ahead can't be made any more, you'll arrive with its plan B (when known).
+function lostChange(m, ex) {
+  const k = m.changes.findIndex(ch => ch.spare < 0 || ch.leg.cancelled);
+  return k < 0 ? null : { k, ch: m.changes[k], fb: ex?.fallbacks[k] || null };
+}
+
+function renderRide(j) {
+  const now = Date.now();
+  const m = rideModel(j, now);
+  const ex = rideState.extras && rideState.extrasKey === j.key ? rideState.extras : null;
+  const curLeg = j.legs[m.cur];
+  const names = legNames(j);
+  const on = m.cur < 0 ? 'Arrived'
+    : now < +j.start ? 'Before you leave'
+    : curLeg.kind === 'transit' ? (now >= +curLeg.dep ? `On the ${legLabel(curLeg)}` : `At ${names[m.cur].from}`)
+    : curLeg.kind === 'walk' ? 'Walking' : curLeg.rental ? `On a ${legLabel(curLeg)}` : 'Riding';
+  const lost = lostChange(m, ex);
+  const arrive = lost?.fb
+    ? `<s>${fmtTime(j.end)}</s> <b class="dly">${fmtTime(lost.fb.end)}</b>`
+    : `<b class="${j.delay >= 1 ? 'dly' : ''}">${fmtTime(j.end)}</b>`;
+  const live = j.transit.some(l => l.live?.isLive);
+  const cards = m.changes.map((ch, k) => changeCardHTML(ch, k, ex ? ex.fallbacks[k] : undefined)).join('')
+    + (m.pickup >= 0 ? pickupCardHTML(j, m.pickup, ex ? ex.rentals[0] : undefined) : '');
+  const notifyBtn = 'Notification' in window && Notification.permission === 'default'
+    ? '<button type="button" class="r-notify" data-action="ride-notify">Allow alerts</button>' : '';
+  $('#ride').innerHTML = `<div class="r-top"><span>${esc(on)} · ${fmtTime(new Date(now))} · arrive ${arrive}</span>
+      ${live ? '<span class="r-live"><span class="live-dot"></span>live</span>' : '<span class="r-live muted">timetable</span>'}</div>
+    <div class="r-next">${countdownHTML(m.next.at, now)}<div><b>${esc(m.next.title)}</b>${m.next.sub ? `<small>${esc(m.next.sub)}</small>` : ''}</div></div>
+    ${rideStripHTML(j, now)}
+    ${rideState.change ? `<div class="r-alert">${esc(rideState.change)}</div>` : ''}
+    ${lost ? `<div class="r-alert bad"><b>${lost.ch.leg.cancelled ? `The ${esc(lost.ch.leg.route.display_name)} is cancelled` : `You'll miss the ${esc(lost.ch.leg.route.display_name)} at ${esc(lost.ch.place)}`}</b>
+      ${lost.fb ? `<button type="button" class="r-take" data-planb="${lost.k}">Take plan B: arrive ${fmtTime(lost.fb.end)}</button>` : ' Looking for plan B…'}</div>`
+      : j.cancelled ? '<div class="r-alert bad">A ride on this route is cancelled. Replan from here.</div>' : ''}
+    <div class="r-cards">${cards || '<div class="muted r-empty">No more changes. Enjoy the ride.</div>'}</div>
+    <div class="r-actions">${notifyBtn}<button type="button" data-action="ride-route">Route &amp; map</button><button type="button" data-action="ride-replan">Replan from here</button><button type="button" class="r-end" data-action="ride-end">End ride</button></div>`;
+  maybeAlert(j, m, now, lost);
+}
+
+// The three facts (plus "get off now"); a buzz when one changes.
+function maybeAlert(j, m, now, lost) {
+  const ch = m.changes[0];
+  const facts = {
+    key: j.key,
+    action: m.next.title,
+    spare: ch ? Math.round(ch.spare / 60) : null,
+    arrive: Math.round((lost?.fb?.end || j.end) / MIN),
+    cancelled: j.cancelled,
+    lost: lost ? lost.ch.leg.tripId : null,
+  };
+  const old = rideState.facts;
+  rideState.facts = facts;
+  if (m.next.getOff != null && m.next.at - now <= GET_OFF_WARN && !rideState.warned.has(`off${m.next.getOff}@${j.key}`)) {
+    rideState.warned.add(`off${m.next.getOff}@${j.key}`);
+    const planB = lost?.fb && lost.ch.a === m.next.getOff;
+    notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}` : '');
+  }
+  if (!old || old.key !== facts.key) return;
+  const msgs = [];
+  if (facts.lost && facts.lost !== old.lost) {
+    msgs.push(`You'll miss the ${lost.ch.leg.route.display_name} at ${lost.ch.place}`);
+    if (lost.fb) msgs.push(`Plan B: ${lost.fb.transit[0] ? `${lost.fb.transit[0].route.display_name} ${fmtTime(lost.fb.transit[0].dep)}, ` : ''}arrive ${fmtTime(lost.fb.end)}`);
+  } else if (facts.cancelled && !old.cancelled) msgs.push('A ride on your route is cancelled');
+  if (Math.abs(facts.arrive - old.arrive) >= 2) msgs.push(`Arrival now ${fmtTime(new Date(facts.arrive * MIN))} (${facts.arrive > old.arrive ? '+' : ''}${facts.arrive - old.arrive}′)`);
+  if (!facts.lost && ch && old.spare != null && facts.spare !== old.spare && (Math.abs(facts.spare - old.spare) >= 3 || (facts.spare < 2) !== (old.spare < 2))) {
+    msgs.push(`Spare at ${ch.place} ${old.spare}′ → ${facts.spare}′${facts.spare < 2 ? ': tight!' : ''}`);
+  }
+  if (facts.action !== old.action) msgs.unshift(`Next: ${facts.action}`);
+  if (!msgs.length) return;
+  rideState.change = `${fmtTime(new Date(now))} · ${msgs.join(' · ')}`;
+  notify(msgs[0], msgs.slice(1).join(' · ') || m.next.sub || '');
+  renderRideSoon();
+}
+
+let rideRenderTimer = 0;
+const renderRideSoon = () => { clearTimeout(rideRenderTimer); rideRenderTimer = setTimeout(() => { const j = currentRide(); if (j && document.body.dataset.mode === 'ride') renderRide(j); }, 50); };
+
+async function notify(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const opts = { body, tag: 'overstap-ride', renotify: true, vibrate: [180, 80, 180], icon: 'icon.svg', badge: 'icon.svg' };
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.showNotification(title, opts); else new Notification(title, opts);
+  } catch { /* in-page banner only */ }
+}
+
+// Plan B per change and bike counts at the pickup; cached for RIDE_EXTRAS_EVERY.
+async function loadRideExtras(j, force = false) {
+  if (rideState.loading || (!force && rideState.extrasKey === j.key && Date.now() - rideState.extrasAt < RIDE_EXTRAS_EVERY)) return;
+  const m = rideModel(j);
+  const body = {
+    mode: j.tab,
+    to: ll(j.to.coords),
+    changes: m.changes.map(ch => {
+      const prev = j.legs[ch.a];
+      const stop = prev.stops[prev.stops.length - 1];
+      return { from: stop?.id || ll(stop.coords), after: ch.leg.dep.toISOString(), avoidTrip: ch.leg.tripId };
+    }),
+    rentals: [],
+  };
+  if (m.pickup >= 0) {
+    const raw = j.raw.legs[m.pickup];
+    body.rentals = [{ lat: raw.from.lat, lng: raw.from.lon, provider: j.legs[m.pickup].rental.providerId }];
+  }
+  rideState.loading = true;
+  try {
+    const d = await api('/api/ride', {}, body);
+    rideState.extras = { fallbacks: d.fallbacks.map(f => (f ? normJourney(f, null, j.tab === 'folding') : null)), rentals: d.rentals };
+    rideState.extrasKey = j.key;
+    rideState.extrasAt = Date.now();
+  } catch { /* try again next tick */ }
+  rideState.loading = false;
+  if (document.body.dataset.mode === 'ride') renderRideSoon();
+}
+
+function startRide(j) {
+  if (!isSaved(j.key)) saveJourney(j);
+  state.rideId = j.key;
+  state.savedId = null;
+  Object.assign(rideState, { facts: null, change: null, extras: null, extrasKey: '' });
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(renderRideSoon);
+  writeHash();
+  render();
+  const r = currentRide();
+  if (r) { loadRideExtras(r, true); liveThenRender([r]); }
+}
+
+// Switch to plan B for change k: everything up to the stop you'd be stranded at, then plan B.
+function takePlanB(k) {
+  const j = currentRide();
+  const ex = rideState.extras;
+  const fb = ex?.fallbacks[k];
+  if (!j || !fb) return;
+  const ch = rideModel(j).changes[k];
+  const raw = { legs: [...j.raw.legs.slice(0, ch.a + 1), ...fb.raw.legs], label: 'Plan B', notes: [`Plan B from ${ch.place}, made ${fmtTime(new Date())}.`] };
+  const nj = normJourney(raw, null, j.tab === 'folding');
+  if (!nj) return;
+  Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab });
+  saveJourney(nj);
+  unsaveJourney(j.key);
+  startRide(nj);
+  rideState.change = `${fmtTime(new Date())} · Switched to plan B: arrive ${fmtTime(nj.end)}`;
+}
+
+function endRide() {
+  state.rideId = null;
+  rideState.facts = null;
+  writeHash();
+  render();
+}
+
+setInterval(async () => {
+  const j = currentRide();
+  if (!j || document.body.dataset.mode !== 'ride') return;
+  await refreshLive([j]);
+  renderRide(j);
+  loadRideExtras(j);
+}, RIDE_REFRESH);
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // ---------- events ----------
 
@@ -1454,6 +1751,13 @@ document.addEventListener('click', e => {
     render();
   }
   if (action === 'saved-menu') { menu.hidden = !menu.hidden; renderSavedBar(); }
+  if (action === 'ride-start') { const j = currentDetail(); if (j) startRide(j); return; }
+  if (action === 'ride-end') { endRide(); return; }
+  if (action === 'ride-route') { state.savedId = state.rideId; state.rideId = null; writeHash(); render(); return; }
+  if (action === 'ride-notify') { Notification.requestPermission().then(renderRideSoon); return; }
+  if (action === 'ride-replan') { endRide(); locate('from'); return; }
+  const planb = t.closest('[data-planb]');
+  if (planb) { takePlanB(+planb.dataset.planb); return; }
   if (action === 'toggle-all') { state.showAll = !state.showAll; render(); }
   if (action === 'toggle-save') {
     const j = currentDetail();
@@ -1592,4 +1896,5 @@ addEventListener('hashchange', () => { applyHash(); plan(); });
   } catch { /* defaults are fine */ }
   plan();
   if (state.savedId) liveThenRender([currentDetail()]);
+  if (state.rideId) { const r = currentRide(); if (r) { liveThenRender([r]); loadRideExtras(r, true); } }
 })();

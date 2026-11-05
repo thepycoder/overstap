@@ -7,6 +7,7 @@
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
 //! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=` | journeys, MOTIS-shaped |
 //! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks, cancellations) |
+//! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change, bikes at rental pickups |
 //! | `GET /healthz` | MOTIS reachable? |
 //!
 //! Blocking and threaded (tiny_http + reqwest::blocking): one rider, a handful of requests.
@@ -183,6 +184,7 @@ fn api(
         }
         (Method::Get, "/api/journeys") => journeys(c, q),
         (Method::Post, "/api/live") => live(c, body),
+        (Method::Post, "/api/ride") => ride(c, body),
         _ => bail!("bad request: no such endpoint {path}"),
     }
 }
@@ -262,4 +264,102 @@ fn live(c: &Client, body: &str) -> Result<Value> {
         }
     }
     Ok(json!({ "trips": out, "at": Utc::now() }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RideRequest {
+    mode: Option<String>,
+    /// Destination, "lat,lng".
+    to: String,
+    #[serde(default)]
+    changes: Vec<ChangeRequest>,
+    #[serde(default)]
+    rentals: Vec<RentalRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeRequest {
+    /// Where you'd be stranded: the stop you got off at (stop id) or "lat,lng".
+    from: String,
+    /// When the connection you'd miss leaves (live); plan B leaves after it.
+    after: DateTime<Utc>,
+    /// The trip you'd have missed, so it's never offered as its own plan B.
+    avoid_trip: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RentalRequest {
+    lat: f64,
+    lng: f64,
+    provider: String,
+}
+
+/// Ride mode extras. For every change still ahead: the best way on if you miss it (earliest
+/// arrival, leaving that stop after the missed departure). For every shared-bike pickup:
+/// how many bikes the nearest station of that operator has now.
+fn ride(c: &Client, body: &str) -> Result<Value> {
+    let r: RideRequest =
+        serde_json::from_str(body).map_err(|e| bad(&format!("ride request: {e}")))?;
+    let carry = match r.mode.as_deref() {
+        None => Carry::Folding,
+        Some(m) => Carry::parse(m).ok_or_else(|| bad("mode"))?,
+    };
+    if planner::parse_coord(&r.to).is_none() {
+        return Err(bad("to must be lat,lng"));
+    }
+    let changes: Vec<ChangeRequest> = r.changes.into_iter().take(4).collect();
+    // One planner run per change, in parallel: each is a few MOTIS calls.
+    let fallbacks: Vec<Option<planner::Journey>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = changes
+            .iter()
+            .map(|ch| {
+                let to = r.to.clone();
+                scope.spawn(move || -> Option<planner::Journey> {
+                    let mut q = planner::Request::new(ch.from.clone(), to, carry);
+                    q.time = Some(ch.after + chrono::Duration::seconds(60));
+                    q.window_min = 90;
+                    let js = planner::plan(c, &q)
+                        .map_err(|e| eprintln!("  ride: plan B from {}: {e:#}", ch.from))
+                        .ok()?;
+                    js.into_iter()
+                        .filter(|j| {
+                            let first = j.it.legs.iter().find(|l| l.is_transit());
+                            first.is_some_and(|l| l.trip_id.is_some() && l.trip_id != ch.avoid_trip)
+                                || (first.is_none() && j.it.legs.iter().any(|l| l.mode != "WALK"))
+                        })
+                        .min_by_key(|j| (j.it.end_time, -j.it.start_time.timestamp()))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().ok().flatten())
+            .collect()
+    });
+    let street = crate::lastmile::Street::new(c);
+    let rentals: Vec<Value> = r
+        .rentals
+        .iter()
+        .take(4)
+        .map(|q| {
+            let near = street.stations_near(q.lat, q.lng, 150).unwrap_or_default();
+            let best = near
+                .into_iter()
+                .filter(|s| s.provider_id == q.provider)
+                .min_by(|a, b| {
+                    let d = |s: &crate::lastmile::RentalStation| {
+                        (s.lat - q.lat).powi(2) + (s.lon - q.lng).powi(2)
+                    };
+                    d(a).total_cmp(&d(b))
+                });
+            match best {
+                Some(s) => json!({ "name": s.name, "bikes": s.num_vehicles_available }),
+                None => Value::Null,
+            }
+        })
+        .collect();
+    Ok(json!({ "fallbacks": fallbacks, "rentals": rentals, "at": Utc::now() }))
 }

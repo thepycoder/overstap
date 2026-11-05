@@ -10,7 +10,10 @@ anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive", "env"] }
+flate2 = "1.1.10"
+prost = "0.14.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"

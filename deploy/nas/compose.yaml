@@ -1,0 +1,60 @@
+# overstap on the NAS: MOTIS (self-updating), the web UI and the GTFS-RT logger.
+#
+#   docker compose up -d          # first start imports Belgium: ~10 min, ~4 GB RAM peak
+#   docker compose logs -f motis
+#
+# Data lives in ./data (MOTIS inputs + data ~3 GB, RT log ~50-70 MB/day; see README.md).
+# The web UI joins the existing `proxy` network that cloudflared uses, like bike-transit;
+# add a public hostname (e.g. overstap.projectwhy.be → http://overstap:8737) in Cloudflare.
+
+x-image: &image
+  image: ghcr.io/thepycoder/overstap:latest
+  restart: unless-stopped
+  environment:
+    TZ: Europe/Brussels
+
+services:
+  motis:
+    <<: *image
+    build: ../..
+    command: motis-run
+    environment:
+      TZ: Europe/Brussels
+      UPDATE_AT: "03:30"          # nightly refresh: timetables daily, OSM weekly
+      OSM_MAX_AGE_DAYS: "7"
+    volumes:
+      - ./data:/data
+    # MOTIS's own debug UI and API on the LAN (optional).
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20m           # first import
+      retries: 3
+
+  overstap:
+    <<: *image
+    container_name: overstap      # cloudflared reaches it as http://overstap:8737
+    command: ["overstap", "serve", "--listen", "0.0.0.0:8737"]
+    environment:
+      TZ: Europe/Brussels
+      MOTIS_URL: http://motis:8080
+    ports:
+      - "8738:8737"               # LAN; 8737 is bike-transit's
+    networks: [default, proxy]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8737/healthz"]
+      interval: 30s
+      timeout: 5s
+
+  rtlog:
+    <<: *image
+    command: ["overstap", "rt-log", "--db", "/data/rt/rt.sqlite", "--raw-dir", "/data/rt/raw"]
+    volumes:
+      - ./data/rt:/data/rt
+
+networks:
+  proxy:
+    external: true

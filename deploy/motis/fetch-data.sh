@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download all inputs for a Belgian MOTIS instance into ./ (run from deploy/motis).
+# Set up a Belgian MOTIS instance in ./ (run from deploy/motis): binary, inputs, first import.
 # Tested 2026-10-29 with MOTIS v2.11.4.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,23 +14,7 @@ if [ ! -x motis ]; then
   fi
 fi
 
-# 2. Timetables (both public, no key needed as of 2026-10).
-curl -fL -o sncb.zip   https://sncb-opendata.hafas.de/gtfs/static/c21ac6758dd25af84cca5b707f3cb3de
-curl -fL -o delijn.zip https://api-management-opendata-production.azure-api.net/api/gtfs/feed/delijn/static
+# 2. Inputs (timetables, OSM, Hoppy) and the first import: the same script as the nightly update.
+./update.sh --no-restart
 
-# 3. Street network. Geofabrik is preferred (reference-complete). The
-#    openstreetmap.fr extract has ways with missing nodes that crash osr
-#    (osmium::invalid_location), so it must be cleaned first.
-if curl -fL -o belgium.osm.pbf https://download.geofabrik.de/europe/belgium-latest.osm.pbf; then
-  :
-else
-  curl -fL -o belgium-raw.osm.pbf https://download.openstreetmap.fr/extracts/europe/belgium-latest.osm.pbf
-  python3 -m pip install --quiet osmium
-  python3 ../../tools/fix_osm_refs.py belgium-raw.osm.pbf belgium.osm.pbf
-  rm belgium-raw.osm.pbf
-fi
-
-# 4. Operators without a public GBFS feed: build a static one (ADR-011).
-python3 ../../tools/hoppy_gbfs.py --region Kempen --out gbfs/hoppy-kempen
-
-echo "Now: ./motis import && ./motis server"
+echo "Now: ./run.sh   (serves MOTIS, re-imports nightly at UPDATE_AT, default 03:30)"

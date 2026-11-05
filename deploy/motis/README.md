@@ -21,7 +21,7 @@
 
 ## Quick start (tested 2026-10-29, MOTIS v2.11.4)
 
-Use `./fetch-data.sh` then `./motis import && ./motis server` with the `config.yml` here.
+Use `./fetch-data.sh` (binary + inputs + first import), then `./run.sh` (server + nightly update). `update.sh` refreshes and re-imports with a health-checked swap; see its header.
 Measured: 2 min 51 s import on 2 vCPU, 1.4 GB data dir, ~1.2 GB RAM serving.
 
 Manual equivalent:

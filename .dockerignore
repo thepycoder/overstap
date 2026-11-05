@@ -1,0 +1,9 @@
+target
+.git
+deploy/motis/data*
+deploy/motis/*.zip
+deploy/motis/*.pbf
+deploy/motis/gbfs
+deploy/motis/motis
+deploy/motis/ui
+deploy/nas/data
