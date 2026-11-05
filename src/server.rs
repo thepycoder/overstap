@@ -147,9 +147,12 @@ fn static_file(web: &Path, path: &str) -> Reply {
         return not_found();
     }
     let file: PathBuf = web.join(rel);
-    let Ok(body) = std::fs::read(&file) else {
+    let Ok(mut body) = std::fs::read(&file) else {
         return not_found();
     };
+    if rel == "index.html" {
+        body = versioned_assets(web, &body);
+    }
     let content_type = match file.extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
         Some("js") => "text/javascript; charset=utf-8",
@@ -165,6 +168,26 @@ fn static_file(web: &Path, path: &str) -> Reply {
         body,
         content_type,
     }
+}
+
+/// Point index.html at `app.js?v=<content hash>` (and app.css): Cloudflare turns our
+/// `no-cache` into a 4 h browser cache for .js/.css, so without a new URL a phone keeps
+/// running the old script against the new page after a deploy.
+fn versioned_assets(web: &Path, html: &[u8]) -> Vec<u8> {
+    use std::hash::{Hash, Hasher};
+    let mut html = String::from_utf8_lossy(html).into_owned();
+    for (attr, name) in [("href", "app.css"), ("src", "app.js")] {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::fs::read(web.join(name))
+            .unwrap_or_default()
+            .hash(&mut h);
+        let v = format!("{:x}", h.finish() & 0xffff_ffff);
+        html = html.replace(
+            &format!("{attr}=\"{name}\""),
+            &format!("{attr}=\"{name}?v={v}\""),
+        );
+    }
+    html.into_bytes()
 }
 
 fn bad(msg: &str) -> anyhow::Error {
