@@ -1,0 +1,1595 @@
+'use strict';
+
+// Icon paths from Lucide (ISC licence), plus a simple scooter.
+const ICONS = {
+  bike: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+  walk: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+  train: '<path d="M8 3.1V7a4 4 0 0 0 8 0V3.1"/><path d="m9 15-1-1"/><path d="m15 15 1-1"/><path d="M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"/><path d="m8 19-2 3"/><path d="m16 19 2 3"/>',
+  metro: '<path d="M2 22V12a10 10 0 1 1 20 0v10"/><path d="M15 6.8v1.4a3 2.8 0 1 1-6 0V6.8"/><path d="M10 15h.01"/><path d="M14 15h.01"/><path d="M10 19a4 4 0 0 1-4-4v-3a6 6 0 1 1 12 0v3a4 4 0 0 1-4 4Z"/><path d="m9 19-2 3"/><path d="m15 19 2 3"/>',
+  tram: '<rect width="16" height="16" x="4" y="3" rx="2"/><path d="M4 11h16"/><path d="M12 3v8"/><path d="m8 19-2 3"/><path d="m18 22-2-3"/><path d="M8 15h.01"/><path d="M16 15h.01"/>',
+  bus: '<path d="M4 6 2 7"/><path d="M10 6h4"/><path d="m22 7-2-1"/><rect width="16" height="16" x="4" y="3" rx="2"/><path d="M4 11h16"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="M6 19v2"/><path d="M18 21v-2"/>',
+  cab: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+  scooter: '<circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M7.5 18h9"/><path d="M15 4h3l-1.6 11.5"/>',
+  locate: '<line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/>',
+  swap: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
+  back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  station: '<rect width="16" height="16" x="4" y="3" rx="3"/><path d="M4 11h16"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="m8 19-2 3"/><path d="m16 19 2 3"/>',
+  bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
+  share: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/><path d="M3 4h6"/><path d="m7 2 2 2-2 2"/>',
+};
+const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.train}</svg>`;
+
+// Ways of travelling around public transport; each is its own search (see src/planner.rs).
+const TABS = [
+  { id: 'folding', name: 'Folding bike', icon: 'bike', title: 'Your folding bike on both ends, and on board' },
+  { id: 'shared', name: 'Shared bikes', icon: 'share', title: 'Blue-bike, Donkey, Velo, Hoppy… for the first and last mile' },
+  { id: 'foot', name: 'On foot', icon: 'walk', title: 'Public transport and walking' },
+];
+const DEFAULT_TAB = 'folding';
+
+// Timetable geometry. ppm = pixels per minute along the time axis.
+const ZOOMS = [2, 3, 4, 5, 6, 8, 10, 13, 16];
+const AXIS_H = 30;
+const AXIS_W = 50;
+const LANE_H = 66;
+const EDGE = { h: 160, v: 90 };
+const MIN = 60000;
+
+// Your own bike is timed at RIDE_KMH. overstap also searches as if you rode at FAST_KMH, so
+// trains you'd only catch by riding hard show up too, marked with the speed they need.
+// Shared e-bikes are timed at EBIKE_KMH (MOTIS rides every rental at about 15 km/h).
+const RIDE_KMH = 18;
+const FAST_KMH = 25;
+const EBIKE_KMH = 20;
+// Longest ride before and after transit, per tab (minutes at MOTIS's speed for rentals).
+const MAX_BIKE_MIN = { folding: 45, shared: 60 };
+const WINDOW_MIN = 60;
+// Line colours for shared-bike operators (by GBFS provider id prefix).
+const PROVIDER_COLORS = [['blue-bike', '#1b7fd1'], ['donkey', '#f0642a'], ['velo', '#d71920'], ['hoppy', '#6aa82c'], ['dott', '#1aa0d8']];
+const rideSec = (meters, kmh) => meters / (kmh / 3.6);
+
+const store = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem('ovs.' + key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+  },
+  set(key, value) {
+    try { this.setOrThrow(key, value); } catch { /* storage unavailable */ }
+  },
+  setOrThrow(key, value) {
+    localStorage.setItem('ovs.' + key, JSON.stringify(value));
+  },
+};
+
+const narrowQuery = matchMedia('(max-width: 860px)');
+
+const state = {
+  config: { center: [51.05, 4.25], timezone: 'Europe/Brussels' },
+  from: null,
+  to: null,
+  timeMode: 'now',
+  time: '',
+  tab: DEFAULT_TAB,
+  journeys: [],
+  byKey: new Map(),
+  paging: { later: 'idle', earlier: 'off' },
+  status: 'idle',
+  error: null,
+  updatedAt: null,
+  seq: 0,
+  selected: null,
+  hot: null,
+  showAll: false,
+  savedId: null,
+  pendingRoute: null,
+  editing: false,
+  ppm: { h: 6, v: 4 },
+  sched: { o: null, anchor: null, fit: new Set(), expect: null, last: { x: 0, y: 0 } },
+};
+
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ll = c => `${(+c[0]).toFixed(6)},${(+c[1]).toFixed(6)}`;
+const toDate = s => (s ? new Date(s) : null);
+const sum = xs => xs.reduce((a, b) => a + (b || 0), 0);
+
+let timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
+const fmtTime = d => (d ? timeFmt.format(d) : '–');
+function fmtDur(sec) {
+  const m = Math.max(1, Math.round((sec || 0) / 60));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+function shortDur(sec) {
+  const m = Math.max(1, Math.round((sec || 0) / 60));
+  return m < 60 ? `${m}′` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+}
+const fmtDist = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+async function api(path, params = {}, body = null) {
+  const url = new URL(path, location.href);
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== '') url.searchParams.set(k, v);
+  const res = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ---------- reading overstap's journeys (MOTIS itineraries) ----------
+
+const STREET_MODES = ['WALK', 'BIKE', 'RENTAL', 'CAR', 'CAR_PARKING', 'ODM', 'FLEX'];
+
+function vehicleOf(mode) {
+  if (/RAIL|TRAIN/.test(mode)) return 'train';
+  if (/SUBWAY|METRO/.test(mode)) return 'metro';
+  if (/TRAM/.test(mode)) return 'tram';
+  if (/BUS|COACH/.test(mode)) return 'bus';
+  return 'train';
+}
+
+// GTFS colours come without '#'; NMBS has none, so trains get one by category.
+function routeOf(l, vehicle) {
+  const name = l.displayName || l.routeShortName || '';
+  let color = l.routeColor ? `#${l.routeColor}` : null;
+  let text = l.routeTextColor ? `#${l.routeTextColor}` : null;
+  if (!color && vehicle === 'train') {
+    color = /^(IC|EC|EUR|THA|ICE)/.test(name) ? '#1c4f9c' : /^S/.test(name) ? '#5b8fd6' : '#3d6fb8';
+    text = '#ffffff';
+  }
+  if (!color && vehicle === 'bus') { color = '#ffcc00'; text = '#000000'; }
+  if (text && color && text.toLowerCase() === color.toLowerCase()) text = null;
+  return { id: l.routeId || name, display_name: name, color: color || '#555555', ui_color: color || '#555555', text_color: text || '#ffffff', agency: l.agencyName };
+}
+
+const providerColor = id => (PROVIDER_COLORS.find(([p]) => (id || '').startsWith(p)) || [null, '#0e9f8e'])[1];
+
+// Every leg keeps its timetable times in schedDep/schedArr (rides) or origDep/origArr (the
+// rest); layout() derives the dep/arr actually shown, including live delays.
+function normLeg(l) {
+  const origDep = toDate(l.scheduledStartTime);
+  const origArr = toDate(l.scheduledEndTime);
+  const base = {
+    mode: l.mode, origDep, origArr, dur: l.duration || (origArr - origDep) / 1000 || 0, distance: l.distance || 0,
+    shape: l.legGeometry?.points ? decodePolyline(l.legGeometry.points, l.legGeometry.precision || 6) : [],
+    fromName: l.from?.name, toName: l.to?.name,
+  };
+  if (!STREET_MODES.includes(l.mode)) {
+    const vehicle = vehicleOf(l.mode);
+    const route = routeOf(l, vehicle);
+    const places = [l.from, ...(l.intermediateStops || []), l.to].filter(Boolean);
+    const leg = {
+      ...base, kind: 'transit', route, vehicle,
+      schedDep: origDep, schedArr: origArr, dur: (origArr - origDep) / 1000,
+      headsign: l.headsign,
+      trainNo: vehicle === 'train' ? l.tripShortName : null,
+      tripId: l.tripId,
+      bikesAllowed: l.bikesAllowed,
+      stops: places.map(p => ({ id: p.stopId, name: p.name, coords: [p.lat, p.lon], sched: toDate(p.scheduledDeparture || p.scheduledArrival) })),
+    };
+    leg.live = liveOf(l.from, l.to, l.realTime, l.cancelled);
+    return leg;
+  }
+  if (l.mode === 'RENTAL') {
+    const r = l.rental || {};
+    const electric = r.propulsionType && r.propulsionType !== 'HUMAN';
+    const kind = /SCOOTER|MOPED/.test(r.formFactor || '') ? 'scooter' : 'bike';
+    const dur = electric && kind === 'bike' && base.distance ? rideSec(base.distance, EBIKE_KMH) : base.dur;
+    return { ...base, kind, dur, rental: { ...r, electric, color: providerColor(r.providerId) } };
+  }
+  if (l.mode === 'BIKE') return { ...base, kind: 'bike' };
+  if (l.mode === 'WALK') return { ...base, kind: 'walk', inStation: base.distance < 20 };
+  return { ...base, kind: 'other' };
+}
+
+// Live state of a ride between two of its stops, from MOTIS places (plan or trip).
+function liveOf(from, to, realTime, cancelled) {
+  return {
+    isLive: !!realTime,
+    status: cancelled || from?.cancelled || to?.cancelled ? 3 : 0,
+    platform: from?.track || from?.scheduledTrack || null,
+    platformChanged: !!(from?.track && from?.scheduledTrack && from.track !== from.scheduledTrack),
+    expDep: realTime ? toDate(from?.departure) : null,
+    expArr: realTime ? toDate(to?.arrival) : null,
+  };
+}
+
+// MOTIS shapes are encoded polylines with `precision` decimals.
+function decodePolyline(str, precision = 6) {
+  const points = [];
+  let i = 0;
+  let lat = 0;
+  let lng = 0;
+  while (i < str.length) {
+    for (const axis of [0, 1]) {
+      let shift = 0;
+      let result = 0;
+      let b;
+      do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (axis === 0) lat += delta; else lng += delta;
+    }
+    points.push([lat / 10 ** precision, lng / 10 ** precision]);
+  }
+  return points;
+}
+
+// `win` holds the times a route has to fit, in ms: `from` when you can leave, `to` when you must
+// arrive. Routes from other searches (paging, saved without one) have none.
+function normJourney(raw, win = null, ownBike = false) {
+  const legs = (raw.legs || []).map(normLeg);
+  if (!legs.length) return null;
+  // MOTIS models a change as a walk between two rides; it belongs in the gap, not a row.
+  legs.forEach((l, k) => { if (l.kind === 'walk' && legs[k - 1]?.kind === 'transit' && legs[k + 1]?.kind === 'transit') l.transfer = true; });
+  for (const l of legs) {
+    // Only your own bike is re-timed (and sped up to catch a train); rentals keep their times.
+    if (ownBike && l.kind === 'bike' && l.distance) l.rideDur = l.dur = rideSec(l.distance, RIDE_KMH);
+  }
+  const j = {
+    raw, legs,
+    label: raw.label || null,
+    notes: raw.notes || [],
+    bikeMeters: sum(legs.filter(l => l.kind === 'bike').map(l => l.distance)),
+    walkMin: Math.round(sum(legs.filter(l => l.kind === 'walk').map(l => l.dur)) / 60),
+    rentals: legs.filter(l => l.rental),
+    ownBike,
+    key: null,
+    from: null,
+    to: null,
+    liveAt: null,
+    win,
+    fastKmh: 0,
+    missed: false,
+  };
+  layout(j);
+  j.schedStart = j.start;
+  j.schedEnd = j.end;
+  j.changes = Math.max(0, j.transit.length - 1);
+  // Where MOTIS itself starts the route: paging goes on from there.
+  j.qStart = toDate(raw.startTime);
+  return j;
+}
+
+// Stretches the rides among `legs` so all of them take `avail` ms. Returns the speed that takes:
+// 0 when your usual pace already fits (give or take a minute), Infinity (leaving the times
+// alone) when FAST_KMH doesn't.
+function fitRides(legs, avail) {
+  if (sum(legs.map(l => l.dur)) * 1000 <= avail + MIN) return 0;
+  const rides = legs.filter(l => l.rideDur);
+  const rideMs = avail - sum(legs.filter(l => !l.rideDur).map(l => l.dur)) * 1000;
+  const kmh = sum(rides.map(l => l.distance)) / (rideMs / 1000) * 3.6;
+  if (!rides.length || rideMs <= 0 || kmh > FAST_KMH) return Infinity;
+  for (const l of rides) {
+    l.dur = rideSec(l.distance, kmh);
+    l.kmh = kmh;
+  }
+  return kmh;
+}
+
+// Times every leg. Rides use their live expected times when known, else the timetable. Legs
+// before the first timed ride are slid to end exactly when it leaves (MOTIS may start them
+// earlier and wait on the platform), and later legs follow on from each other.
+// Rides that don't fit the route's time window at your usual pace are sped up, up to FAST_KMH.
+function layout(j) {
+  const legs = j.legs;
+  for (const l of legs) {
+    if (l.rideDur) { l.dur = l.rideDur; l.kmh = 0; }
+  }
+  j.fastKmh = 0;
+  j.missed = false;
+  for (const l of legs) {
+    if (l.kind !== 'transit') continue;
+    const lv = l.live;
+    l.dep = lv?.expDep || l.schedDep || null;
+    l.arr = lv?.expArr || (lv?.expDep && l.schedArr ? new Date(+l.schedArr + (lv.expDep - l.schedDep)) : l.schedArr) || null;
+    if (l.dep && !l.arr) l.arr = new Date(+l.dep + l.dur * 1000);
+    l.delay = lv?.expDep && l.schedDep ? Math.round((lv.expDep - l.schedDep) / MIN) : 0;
+    l.cancelled = lv?.status === 3;
+    l.atRisk = false;
+  }
+  let anchor = legs.findIndex(l => l.kind === 'transit' && l.dep);
+  if (anchor === -1) {
+    anchor = 0;
+    legs[0].dep = legs[0].origDep || new Date();
+    legs[0].arr = new Date(+legs[0].dep + legs[0].dur * 1000);
+  } else if (j.win) {
+    const last = legs.length - 1 - [...legs].reverse().findIndex(l => l.kind === 'transit' && l.dep);
+    const before = j.win.from != null ? fitRides(legs.slice(0, anchor), legs[anchor].dep - j.win.from) : 0;
+    const after = j.win.to != null ? fitRides(legs.slice(last + 1), j.win.to - legs[last].arr) : 0;
+    j.missed = before === Infinity || after === Infinity;
+    if (!j.missed) j.fastKmh = Math.ceil(Math.max(before, after));
+  }
+  for (let k = anchor - 1; k >= 0; k--) {
+    legs[k].arr = legs[k + 1].dep;
+    legs[k].dep = new Date(+legs[k].arr - legs[k].dur * 1000);
+  }
+  for (let k = anchor + 1; k < legs.length; k++) {
+    const l = legs[k];
+    const prevArr = legs[k - 1].arr;
+    if (l.kind === 'transit' && l.dep) {
+      // A delay earlier on can make a connection impossible.
+      if (prevArr > l.dep) l.atRisk = true;
+      continue;
+    }
+    l.dep = prevArr;
+    l.arr = new Date(+prevArr + l.dur * 1000);
+  }
+  j.transit = legs.filter(l => l.kind === 'transit');
+  j.start = legs[0].dep;
+  j.end = legs[legs.length - 1].arr;
+  j.duration = (j.end - j.start) / 1000;
+  j.delay = j.schedEnd && j.transit.length ? Math.round((j.end - j.schedEnd) / MIN) : 0;
+  j.cancelled = j.transit.some(l => l.cancelled);
+  j.atRisk = j.transit.some(l => l.atRisk);
+}
+
+// One key per real option: the same vehicles reached the same way, whichever search found it.
+function journeyKey(j, tab) {
+  const parts = [];
+  for (const l of j.legs) {
+    const p = l.kind === 'transit' ? (l.tripId || `${l.route.id}@${Math.round(l.schedDep / MIN)}`) : l.rental ? `${l.kind}:${l.rental.providerId}` : l.kind;
+    if (parts[parts.length - 1] !== p) parts.push(p);
+  }
+  if (!j.transit.length) parts.push(Math.round(j.start / MIN));
+  return `${tab}|${parts.join('>')}`;
+}
+
+function normalize(d, win = null, tab = state.tab) {
+  return (d.journeys || []).map(raw => {
+    const j = normJourney(raw, win, tab === 'folding');
+    if (j) j.key = journeyKey(j, tab);
+    return j;
+  }).filter(Boolean);
+}
+
+const wanted = j => !j.missed;
+const titleCase = s => s.toLowerCase().replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+
+// ---------- planning & paging ----------
+
+function isoFromDate(d) {
+  const pad = n => String(Math.floor(Math.abs(n))).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${off >= 0 ? '+' : '-'}${pad(off / 60)}:${pad(off % 60)}`;
+}
+
+function defaultTimeValue() {
+  const d = new Date(Date.now() + 15 * MIN);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  return isoFromDate(d).slice(0, 16);
+}
+
+const targetTime = () => (state.timeMode === 'now' || !state.time ? null : new Date(state.time));
+
+// One overstap search. `time` is when to leave (or arrive, with ARRIVE_BY); none means now.
+function fetchJourneys(timeMode, time, win = null) {
+  const tab = state.tab;
+  const params = { start: ll(state.from.coords), end: ll(state.to.coords), mode: tab, window: WINDOW_MIN, maxbike: MAX_BIKE_MIN[tab] };
+  if (tab === 'folding') Object.assign(params, { kmh: RIDE_KMH, fast: FAST_KMH });
+  if (time) params.time = isoFromDate(time);
+  if (timeMode === 'ARRIVE_BY') params.arrive = 1;
+  const from = slim(state.from);
+  const to = slim(state.to);
+  return api('/api/journeys', params).then(d => normalize(d, win, tab).map(j => Object.assign(j, { from, to, tab })));
+}
+
+// Adds a page of results; returns the journeys it contributed.
+function merge(page, { initial = false } = {}) {
+  const fresh = [];
+  for (const j of page) {
+    if (!wanted(j) || state.byKey.has(j.key)) continue;
+    // Options without public transport don't depend on the time; keep the first page's.
+    if (!initial && !j.transit.length) continue;
+    state.byKey.set(j.key, j);
+    state.journeys.push(j);
+    fresh.push(j);
+  }
+  state.journeys.sort((a, b) => a.start - b.start || a.end - b.end);
+  // Reopen the route that was open before a reload (the URL keeps it) once the search finds it.
+  if (state.pendingRoute && state.byKey.has(state.pendingRoute)) {
+    state.selected = state.pendingRoute;
+    state.pendingRoute = null;
+  }
+  return fresh;
+}
+
+const liveThenRender = journeys => refreshLive(journeys).then(changed => { if (changed) render(); });
+
+async function plan() {
+  writeHash();
+  const seq = ++state.seq;
+  Object.assign(state, {
+    journeys: [], byKey: new Map(), selected: null, hot: null,
+    paging: { later: 'idle', earlier: state.timeMode === 'now' ? 'off' : 'idle' },
+  });
+  state.sched.anchor = null;
+  state.sched.fit = new Set(['h', 'v']);
+  setHeader(true);
+  if (!state.from || !state.to) {
+    state.status = 'idle';
+    render();
+    return;
+  }
+  state.status = 'loading';
+  render();
+  const target = targetTime();
+  const ref = target || new Date();
+  const arriving = state.timeMode === 'arrive';
+  // This search's routes have to fit your leave (or arrive-by) time; paging and saved routes don't.
+  const win = arriving ? { from: null, to: +ref } : { from: +ref, to: null };
+  try {
+    // MOTIS covers a whole window in one search (WINDOW_MIN), so no sweeping is needed.
+    const page = await fetchJourneys(arriving ? 'ARRIVE_BY' : 'DEPART_AT', ref, win);
+    if (seq !== state.seq) return;
+    merge(page, { initial: true });
+    state.status = 'ok';
+    state.updatedAt = new Date();
+    rememberTrip();
+  } catch (e) {
+    if (seq !== state.seq) return;
+    state.status = 'error';
+    state.error = e.message;
+    state.pendingRoute = null;
+  }
+  if (state.pendingRoute && state.status === 'ok' && !state.selected) state.pendingRoute = null;
+  writeHash();
+  render();
+}
+
+// Further pages go by departure time either way, on from where MOTIS started the routes
+// shown, so every departure in between gets covered.
+async function loadMore(dir) {
+  if (state.status !== 'ok' || state.paging[dir] !== 'idle') return;
+  const seq = state.seq;
+  state.paging[dir] = 'loading';
+  renderSchedule();
+  const timed = state.journeys.filter(j => j.transit.length);
+  const ref = +(targetTime() || new Date());
+  const span = WINDOW_MIN * MIN;
+  let start = dir === 'later'
+    ? new Date((timed.length ? Math.max(...timed.map(j => +j.qStart)) : ref) + MIN)
+    : new Date((timed.length ? Math.min(...timed.map(j => +j.qStart)) : ref) - span);
+  let result = 'done';
+  try {
+    // One retry further along, in case of a gap in the timetable (nights).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const page = await fetchJourneys('DEPART_AT', start);
+      if (seq !== state.seq) return;
+      const fresh = merge(page);
+      if (fresh.length) { result = 'idle'; break; }
+      start = new Date(+start + (dir === 'later' ? 1 : -1) * span);
+    }
+  } catch {
+    result = 'error';
+  }
+  if (seq !== state.seq) return;
+  state.paging[dir] = result;
+  render();
+}
+
+// Routes that another route clearly beats: it leaves no earlier, arrives no later, changes no
+// more often, and either changes less (the same train reached by bike instead of an extra hop)
+// or saves at least BEAT_MARGIN minutes in total. A couple of minutes isn't a real difference,
+// so near-equal alternatives both stay. Cancelled routes, broken connections and routes you'd
+// have to ride faster for never beat anything, and saved routes are never counted as beaten.
+const BEAT_MARGIN = 5;
+
+function beatenJourneys() {
+  const all = state.journeys;
+  const saved = new Set(savedEntries().map(s => s.id));
+  const t = d => Math.round(+d / MIN);
+  const beats = (a, b) => !a.cancelled && !a.atRisk && !a.fastKmh
+    && t(a.start) >= t(b.start) && t(a.end) <= t(b.end) && a.changes <= b.changes
+    && (a.changes < b.changes || (t(a.start) - t(b.start)) + (t(b.end) - t(a.end)) >= BEAT_MARGIN);
+  return new Set(all.filter(b => !saved.has(b.key) && all.some(a => a !== b && beats(a, b))));
+}
+
+function shownJourneys() {
+  if (state.showAll) return state.journeys;
+  const beaten = beatenJourneys();
+  return state.journeys.filter(j => !beaten.has(j));
+}
+
+// ---------- live departures: delays, cancellations, tracks ----------
+
+// MOTIS's plans already carry live times as of the search; after that each ride's trip is
+// fetched again (POST /api/live), and matched by the stops you board and leave at.
+function applyTrip(l, trip) {
+  const places = [trip.from, ...(trip.intermediateStops || []), trip.to].filter(Boolean);
+  const board = l.stops[0];
+  const alight = l.stops[l.stops.length - 1];
+  const i = places.findIndex(p => p.stopId === board.id && Math.abs(toDate(p.scheduledDeparture) - board.sched) < 2 * MIN);
+  if (i === -1) return false;
+  const k = places.findIndex((p, n) => n > i && p.stopId === alight.id);
+  if (k === -1) return false;
+  l.live = liveOf(places[i], places[k], trip.realTime, trip.cancelled);
+  return true;
+}
+
+// Live data only exists close to departure, so only ask for journeys starting within 3 hours.
+// A route you've opened or saved may be the one you're on, so it's followed until it's well
+// overdue; in a list, routes that ended 10 minutes ago are done with.
+async function refreshLive(journeys) {
+  const now = Date.now();
+  const open = currentDetail();
+  const grace = j => (j.saved || j === open ? 90 : 10) * MIN;
+  const due = journeys.filter(j => j.transit.length && +j.end > now - grace(j) && +j.start < now + 180 * MIN).slice(0, 30);
+  const ids = [...new Set(due.flatMap(j => j.transit.map(l => l.tripId)).filter(Boolean))];
+  if (!ids.length) return false;
+  const trips = {};
+  for (let i = 0; i < ids.length; i += 20) {
+    try {
+      Object.assign(trips, (await api('/api/live', {}, { trips: ids.slice(i, i + 20) })).trips);
+    } catch { /* keep what we had */ }
+  }
+  let changed = false;
+  for (const j of due) {
+    let any = false;
+    for (const l of j.transit) if (trips[l.tripId] && applyTrip(l, trips[l.tripId])) any = true;
+    if (any) { j.liveAt = new Date(); layout(j); changed = true; }
+  }
+  return changed;
+}
+
+async function liveTick() {
+  if (document.hidden) return;
+  const mode = document.body.dataset.mode;
+  const open = currentDetail();
+  const journeys = open ? [open] : mode === 'results' ? state.journeys : savedJourneys();
+  if (await refreshLive(journeys)) render();
+}
+
+// ---------- saved routes (kept in this browser only) ----------
+
+// Saved journeys are rebuilt from the raw itinerary once and then kept, so live updates stick.
+const savedCache = new Map();
+const savedEntries = () => store.get('saved', []);
+
+function savedJourney(entry) {
+  let j = savedCache.get(entry.id);
+  if (!j) {
+    j = normJourney(entry.raw, entry.win || null, entry.tab === 'folding');
+    if (!j) return null;
+    Object.assign(j, { key: entry.id, from: entry.from, to: entry.to, tab: entry.tab, saved: true });
+    savedCache.set(entry.id, j);
+  }
+  return j;
+}
+
+const savedJourneys = () => savedEntries().map(savedJourney).filter(Boolean).sort((a, b) => a.start - b.start);
+const isSaved = key => savedEntries().some(s => s.id === key);
+
+function saveJourney(j) {
+  const list = savedEntries().filter(s => s.id !== j.key);
+  list.push({ id: j.key, savedAt: Date.now(), tab: j.tab, from: j.from, to: j.to, raw: j.raw, win: j.win });
+  try {
+    store.setOrThrow('saved', list);
+  } catch {
+    alert('Could not save this route: browser storage is full or unavailable.');
+  }
+}
+
+function unsaveJourney(key) {
+  store.set('saved', savedEntries().filter(s => s.id !== key));
+  savedCache.delete(key);
+  if (state.savedId === key) state.savedId = null;
+}
+
+// Saved routes are kept until half a day after they end.
+function pruneSaved() {
+  const cutoff = Date.now() - 12 * 60 * MIN;
+  store.set('saved', savedEntries().filter(s => { const j = savedJourney(s); return j && +j.end > cutoff; }));
+}
+
+// The one to offer first: the next saved route that isn't over yet.
+function nextSaved() {
+  const list = savedJourneys();
+  return list.find(j => +j.end > Date.now() - 10 * MIN) || list[list.length - 1] || null;
+}
+
+function currentDetail() {
+  if (state.savedId) {
+    const entry = savedEntries().find(s => s.id === state.savedId);
+    return entry ? savedJourney(entry) : null;
+  }
+  return (state.selected && state.byKey.get(state.selected)) || null;
+}
+
+function openSaved(id) {
+  state.savedId = id;
+  state.editing = false;
+  $('#savedMenu').hidden = true;
+  setHot(null);
+  writeHash();
+  render();
+  $('#detail').scrollTop = 0;
+  const j = currentDetail();
+  if (j) liveThenRender([j]);
+}
+
+// ---------- URL + local memory ----------
+
+function writeHash() {
+  const p = new URLSearchParams();
+  const enc = pl => `${(+pl.coords[0]).toFixed(5)},${(+pl.coords[1]).toFixed(5)},${pl.name || ''}`;
+  if (state.from) p.set('from', enc(state.from));
+  if (state.to) p.set('to', enc(state.to));
+  if (state.tab !== DEFAULT_TAB) p.set('tab', state.tab);
+  if (state.timeMode !== 'now' && state.time) { p.set('when', state.timeMode); p.set('t', state.time); }
+  // The open route, so a reload (or the phone discarding the tab) brings you straight back.
+  if (state.savedId) p.set('saved', state.savedId);
+  else if (state.selected || state.pendingRoute) p.set('route', state.selected || state.pendingRoute);
+  history.replaceState(null, '', p.toString() ? '#' + p.toString() : location.pathname);
+}
+
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const dec = v => {
+    if (!v) return null;
+    const [lat, lng, ...name] = v.split(',');
+    return Number.isFinite(+lat) && Number.isFinite(+lng) ? { coords: [+lat, +lng], name: name.join(',') || 'Pinned place' } : null;
+  };
+  state.from = dec(p.get('from'));
+  state.to = dec(p.get('to'));
+  state.tab = TABS.some(t => t.id === p.get('tab')) ? p.get('tab') : DEFAULT_TAB;
+  state.timeMode = p.get('when') && p.get('t') ? p.get('when') : 'now';
+  state.time = state.timeMode === 'now' ? '' : p.get('t');
+  state.savedId = savedEntries().some(s => s.id === p.get('saved')) ? p.get('saved') : null;
+  state.pendingRoute = p.get('route');
+}
+
+const samePlace = (a, b) => a && b && Math.abs(a.coords[0] - b.coords[0]) < 1e-4 && Math.abs(a.coords[1] - b.coords[1]) < 1e-4;
+const slim = p => ({ name: p.name, address: p.address || null, coords: [+p.coords[0], +p.coords[1]] });
+
+function rememberPlace(p) {
+  if (!p || p.current) return;
+  const list = store.get('places', []).filter(x => !samePlace(x, p));
+  store.set('places', [slim(p), ...list].slice(0, 8));
+}
+
+function rememberTrip() {
+  if (state.from.current || state.to.current) return;
+  const trip = { from: slim(state.from), to: slim(state.to) };
+  const list = store.get('trips', []).filter(t => !(samePlace(t.from, trip.from) && samePlace(t.to, trip.to)));
+  store.set('trips', [trip, ...list].slice(0, 6));
+}
+
+// ---------- map ----------
+
+const map = L.map('map', { zoomControl: false }).setView(state.config.center, 9);
+L.control.zoom({ position: 'topright' }).addTo(map);
+// Dark mode inverts these tiles in CSS (.leaflet-tile-pane).
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · routes by MOTIS',
+}).addTo(map);
+
+const routeLayer = L.layerGroup().addTo(map);
+const markers = {};
+let drawnJourney = null;
+
+function placeMarker(role) {
+  const p = state[role];
+  if (!p) { markers[role]?.remove(); delete markers[role]; return; }
+  if (!markers[role]) {
+    markers[role] = L.marker(p.coords, {
+      draggable: true, zIndexOffset: 1000, keyboard: false,
+      icon: L.divIcon({ className: '', html: `<div class="pin ${role}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
+    }).addTo(map);
+    markers[role].on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setFromPoint(role, lat, lng); });
+  } else {
+    markers[role].setLatLng(p.coords);
+  }
+}
+
+function legColor(l) {
+  const css = getComputedStyle(document.documentElement);
+  if (l.kind === 'transit') return l.route.ui_color || l.route.color || '#555';
+  if (l.rental) return l.rental.color;
+  if (l.kind === 'bike') return css.getPropertyValue(l.kmh ? '--fast' : '--accent').trim();
+  if (l.kind === 'scooter') return css.getPropertyValue('--scooter').trim();
+  if (l.kind === 'cab') return css.getPropertyValue('--cab').trim();
+  return css.getPropertyValue('--walk').trim();
+}
+
+function drawJourney(j, { fit = true } = {}) {
+  if (drawnJourney === j && !fit) return;
+  drawnJourney = j;
+  routeLayer.clearLayers();
+  const points = [];
+  if (!j) return;
+  for (const l of j.legs) {
+    if (!l.shape.length) continue;
+    points.push(...l.shape);
+    const color = legColor(l);
+    if (l.kind === 'walk') {
+      L.polyline(l.shape, { color, weight: 4, dashArray: '1 8', lineCap: 'round', interactive: false }).addTo(routeLayer);
+      continue;
+    }
+    L.polyline(l.shape, { color: '#ffffff', weight: 9, opacity: 0.9, interactive: false }).addTo(routeLayer);
+    L.polyline(l.shape, { color, weight: 5, interactive: false }).addTo(routeLayer);
+    if (l.kind === 'transit') {
+      for (const s of [l.stops[0], l.stops[l.stops.length - 1]]) {
+        if (!s?.coords) continue;
+        L.circleMarker(s.coords, { radius: 5, color, weight: 3, fillColor: '#fff', fillOpacity: 1 })
+          .bindTooltip(esc(s.name), { direction: 'top', className: 'stop-tip' }).addTo(routeLayer);
+      }
+    }
+  }
+  if (fit && points.length) {
+    // Keep the route clear of the floating detail panel on wide screens.
+    const panel = !narrowQuery.matches && document.body.dataset.mode === 'detail';
+    const pad = narrowQuery.matches ? 24 : 60;
+    map.fitBounds(L.latLngBounds(points), { paddingTopLeft: [panel ? 450 : pad, pad], paddingBottomRight: [pad, pad], maxZoom: 16 });
+  }
+}
+
+// ---------- endpoints & autocomplete ----------
+
+function setEndpoint(role, place, { replan = true } = {}) {
+  state[role] = place ? { name: place.name, address: place.address, coords: [+place.coords[0], +place.coords[1]], current: !!place.current } : null;
+  $('#' + role).value = place ? place.name : '';
+  placeMarker(role);
+  rememberPlace(state[role]);
+  if (replan) { state.savedId = null; plan(); }
+}
+
+async function setFromPoint(role, lat, lng) {
+  setEndpoint(role, { name: 'Pinned place', coords: [lat, lng] });
+  try {
+    const r = await api('/api/reverse', { lat: lat.toFixed(6), lng: lng.toFixed(6) });
+    if (r.name && state[role] && samePlace(state[role], { coords: [lat, lng] })) {
+      state[role].name = r.name;
+      state[role].address = r.address;
+      $('#' + role).value = r.name;
+      writeHash();
+      rememberPlace(state[role]);
+      renderSummary();
+    }
+  } catch { /* keep the generic name */ }
+}
+
+function locate(role) {
+  if (!navigator.geolocation) return alert('Location is not available in this browser.');
+  const input = $('#' + role);
+  input.value = 'Locating…';
+  navigator.geolocation.getCurrentPosition(
+    pos => setEndpoint(role, { name: 'Current location', coords: [pos.coords.latitude, pos.coords.longitude], current: true }),
+    err => { input.value = state[role]?.name || ''; alert('Could not get your location: ' + err.message); },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+  );
+}
+
+function placeIcon(p) {
+  if (p.kind === 'here') return 'locate';
+  if (p.kind === 'recent') return 'history';
+  if (/station|stop/i.test(p.type || '') || /Station|Stop/.test(p.id || '')) return 'station';
+  return 'pin';
+}
+
+function setupField(role) {
+  const input = $('#' + role);
+  const list = input.parentElement.querySelector('.suggest');
+  let items = [];
+  let active = -1;
+  let timer = null;
+  let seq = 0;
+
+  const close = () => { list.hidden = true; active = -1; };
+  const show = () => {
+    list.innerHTML = items.length
+      ? items.map((p, k) => `<li role="option" data-k="${k}" aria-selected="${k === active}">
+          <span class="s-ico">${icon(placeIcon(p))}</span>
+          <span><b>${esc(p.name)}</b>${p.address ? `<small>${esc(p.address)}</small>` : ''}</span></li>`).join('')
+      : '<li class="s-empty">No places found</li>';
+    list.hidden = false;
+  };
+  const recents = () => {
+    items = [{ kind: 'here', name: 'Current location' }, ...store.get('places', []).map(p => ({ ...p, kind: 'recent' }))];
+    active = -1;
+    show();
+  };
+  async function search() {
+    const q = input.value.trim();
+    if (q.length < 2) return recents();
+    const mine = ++seq;
+    const other = state[role === 'from' ? 'to' : 'from'];
+    const near = other?.coords || [map.getCenter().lat, map.getCenter().lng];
+    try {
+      const res = await api('/api/search', { q, near: ll(near) });
+      if (mine !== seq) return;
+      items = res;
+      active = items.length ? 0 : -1;
+      show();
+    } catch { /* leave the list as it was */ }
+  }
+  async function choose(p) {
+    close();
+    if (!p) return;
+    if (p.kind === 'here') return locate(role);
+    let place = p;
+    if (!place.coords) {
+      input.value = p.name + '…';
+      try { place = { ...p, ...(await api('/api/resolve', { id: p.id })) }; } catch { input.value = p.name; return; }
+      place.name = p.name;
+      place.address = place.address || p.address;
+    }
+    if (!place.coords) { input.value = p.name; return; }
+    setEndpoint(role, place);
+    if (role === 'from' && !state.to) $('#to').focus();
+  }
+
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
+  input.addEventListener('focus', () => { input.select(); if (!input.value.trim() || state[role]?.name === input.value) recents(); });
+  input.addEventListener('blur', () => setTimeout(() => {
+    close();
+    if (!input.value.trim() && state[role]) setEndpoint(role, null);
+    else if (state[role] && input.value !== state[role].name) input.value = state[role].name;
+  }, 150));
+  input.addEventListener('keydown', e => {
+    if (list.hidden && e.key === 'ArrowDown') return search();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % Math.max(items.length, 1);
+      show();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      choose(items[active] || items[0]);
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+  list.addEventListener('pointerdown', e => {
+    const li = e.target.closest('li[data-k]');
+    if (!li) return;
+    e.preventDefault();
+    choose(items[+li.dataset.k]);
+  });
+}
+
+// ---------- shared bits of route rendering ----------
+
+// Place names where each leg starts and ends. Only transit legs carry names; the rest borrow
+// them from neighbouring stations, or stay null when there is nothing sensible to show.
+function legNames(j) {
+  const legs = j.legs;
+  const n = legs.length;
+  const names = legs.map(l => (l.kind === 'transit' ? { from: l.stops[0]?.name, to: l.stops[l.stops.length - 1]?.name } : { from: null, to: null }));
+  for (let k = 0; k < n; k++) {
+    const l = legs[k];
+    const nm = names[k];
+    if (l.kind === 'transit') continue;
+    nm.from = k === 0 ? j.from.name : names[k - 1].to;
+    if (k === n - 1) nm.to = j.to.name;
+    else if (legs[k + 1].kind === 'transit') nm.to = names[k + 1].from;
+    else if (legs[k + 1].kind === 'walk' && legs[k + 2]?.kind === 'transit') nm.to = names[k + 2].from;
+    else if (l.kind === 'walk') nm.to = nm.from;
+    if (l.rental) {
+      nm.from = l.rental.fromStationName || nm.from;
+      nm.to = l.rental.toStationName || nm.to;
+    }
+  }
+  return names;
+}
+
+// Per-journey markers: missed (leave-now routes whose start has passed), late (after an
+// arrive-by time) and the single best option for the chosen time mode.
+function journeyFlags(routes) {
+  const target = targetTime();
+  const now = Date.now();
+  const flags = new Map(routes.map(j => [j.key, {
+    past: state.timeMode === 'now' && +j.start < now - MIN,
+    late: state.timeMode === 'arrive' && +j.end > +target,
+    lateMin: target ? Math.round((j.end - target) / MIN) : 0,
+    best: false,
+  }]));
+  let best = null;
+  for (const j of routes) {
+    const f = flags.get(j.key);
+    if (j.cancelled || j.atRisk || j.fastKmh) continue;
+    if (state.timeMode === 'arrive') {
+      if (j.transit.length && !f.late && (!best || j.start > best.start)) best = j;
+    } else if (!f.past && !(state.timeMode === 'depart' && j.start < target)) {
+      if (!best || j.end < best.end || (+j.end === +best.end && j.duration < best.duration)) best = j;
+    }
+  }
+  if (best) flags.get(best.key).best = true;
+  return flags;
+}
+
+const pill = r => `<span class="pill" style="background:${esc(r.ui_color || r.color || '#555')};color:${esc(r.text_color || '#fff')}">${esc(r.display_name || r.id)}</span>`;
+const blockColors = l => (l.kind === 'transit' ? `background:${esc(l.route.ui_color || l.route.color || '#555')};color:${esc(l.route.text_color || '#fff')};`
+  : l.rental ? `background:${esc(l.rental.color)};color:#fff;` : '');
+
+function legTitle(l, nm, j) {
+  if (l.kind === 'transit') {
+    const extra = [l.live?.platform && `track ${l.live.platform}`, l.cancelled ? 'cancelled' : l.delay >= 1 && `${l.delay} min late`].filter(Boolean).join(', ');
+    return `${l.route.display_name || ''}${l.headsign ? ` towards ${l.headsign}` : ''}${extra ? ` (${extra})` : ''}\n${nm.from || ''} ${fmtTime(l.dep)} → ${nm.to || ''} ${fmtTime(l.arr)} (${fmtDur(l.dur)})`;
+  }
+  const what = l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: j.ownBike ? 'Ride your bike' : 'Cycle', scooter: 'Scooter', cab: 'Taxi or on-demand', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: 'Travel' }[l.kind];
+  return `${what}${l.distance ? ` ${fmtDist(l.distance)}` : ''} · ${fmtDur(l.dur)}${l.kmh ? ` at ${Math.ceil(l.kmh)} km/h` : ''}${nm.to ? `\n→ ${nm.to}` : ''}`;
+}
+
+// ---------- rendering ----------
+
+// The stage shows the timetable for results, and the map before a search or for a route's details.
+function render() {
+  const open = currentDetail();
+  const mode = open ? 'detail' : !state.from || !state.to ? 'idle' : 'results';
+  const stage = mode === 'results' ? 'schedule' : 'map';
+  if (mode !== 'results') setHeader(true);
+  Object.assign(document.body.dataset, { mode, stage });
+  document.body.classList.toggle('editing', state.editing);
+
+  renderSummary();
+  renderTabs();
+  renderViewbar();
+  renderSavedBar();
+  renderNotice();
+  if (mode === 'idle') renderIntro();
+  if (mode === 'detail') renderDetail(open);
+  // A saved route can be from another search; its own line shows the ends, so hide the search pins.
+  for (const role of ['from', 'to']) {
+    if (open?.saved) { markers[role]?.remove(); delete markers[role]; } else placeMarker(role);
+  }
+  if (stage === 'schedule') renderSchedule();
+  else requestAnimationFrame(() => { map.invalidateSize(); drawJourney(open); });
+}
+
+// The search bar slides away while you scroll through the timetable, so it can use the whole
+// screen; scrolling back, or tapping the pill that replaces it, brings it back.
+function setHeader(visible) {
+  document.body.classList.toggle('hdr-hidden', !visible);
+}
+
+function renderSummary() {
+  if (!state.from || !state.to) return;
+  const when = state.timeMode === 'now' ? 'Leave now' : `${state.timeMode === 'arrive' ? 'Arrive by' : 'Depart'} ${fmtTime(targetTime())}`;
+  const html = `<span class="sum-route"><b>${esc(state.from.name)}</b> → <b>${esc(state.to.name)}</b></span><span class="sum-when">${esc(when)}</span>`;
+  $('#summary').innerHTML = html;
+  $('#pill').innerHTML = `${icon('pin')}${html}`;
+}
+
+function renderTabs() {
+  $('#tabs').innerHTML = TABS.map(t =>
+    `<button type="button" data-tab="${t.id}" aria-pressed="${t.id === state.tab}" title="${esc(t.title)}">${icon(t.icon)} ${t.name}</button>`).join('');
+}
+
+function renderViewbar() {
+  const o = state.sched.o || (narrowQuery.matches ? 'v' : 'h');
+  const z = ZOOMS.indexOf(state.ppm[o]);
+  $('[data-zoom="-1"]').disabled = z <= 0;
+  $('[data-zoom="1"]').disabled = z >= ZOOMS.length - 1;
+  $('.refresh').title = state.updatedAt ? `Refresh (updated ${fmtTime(state.updatedAt)})` : 'Refresh';
+  const hidden = state.status === 'ok' ? beatenJourneys().size : 0;
+  const toggle = $('.show-all');
+  toggle.hidden = hidden < 1;
+  toggle.setAttribute('aria-pressed', String(state.showAll));
+  toggle.textContent = state.showAll ? `Hide ${hidden} slower` : `+${hidden} slower`;
+  toggle.title = state.showAll
+    ? 'Hide routes that another route beats: leaving no earlier, arriving no later, with no more changes'
+    : `${hidden} route${hidden > 1 ? 's are' : ' is'} hidden because another route leaves no earlier, arrives no later and has no more changes`;
+}
+
+function renderNotice() {
+  let html = '';
+  if (state.status === 'error') {
+    html = `<div class="notice error">${esc(state.error)} <button type="button" data-action="retry">Try again</button></div>`;
+  } else if (state.status === 'ok' && !state.journeys.length) {
+    html = state.tab === 'foot'
+      ? '<div class="notice">No public transport routes found for this trip.</div>'
+      : `<div class="notice">No ${state.tab === 'folding' ? 'folding-bike' : 'shared-bike'} routes for this trip. <button type="button" data-tab="foot">Try on foot</button></div>`;
+  }
+  $('#notice').innerHTML = html;
+}
+
+// ---------- intro card + detail header pieces ----------
+
+function renderIntro() {
+  const trips = store.get('trips', []);
+  const saved = savedJourneys();
+  $('#intro').innerHTML = `<h2>overstap</h2>
+    <p>Pick a start and destination above. <b>Folding bike</b> rides to the station, takes the bike on board and rides the last stretch; <b>Shared bikes</b> adds Blue-bike, Donkey, Velo and Hoppy, with their parking rules; <b>On foot</b> is public transport and walking.</p>
+    ${saved.length ? `<div class="group-title">Saved routes</div><div class="saved-list">${saved.map(savedItemHTML).join('')}</div>` : ''}
+    ${trips.length ? `<div class="group-title">Recent trips</div><div class="trips">${trips.map((t, k) =>
+      `<button type="button" class="trip" data-trip="${k}">${icon('history')}<span>${esc(t.from.name)} → ${esc(t.to.name)}</span></button>`).join('')}</div>` : ''}`;
+}
+
+// Short live status of a whole journey: cancelled, a broken connection, late, or on time.
+function statusHTML(j) {
+  if (j.cancelled) return '<span class="st cancel">Cancelled</span>';
+  if (j.atRisk) return '<span class="st cancel">Connection at risk</span>';
+  if (j.delay >= 1) return `<span class="st late">+${j.delay} min</span>`;
+  if (j.transit.some(l => l.live?.isLive)) return '<span class="st ok">On time</span>';
+  return '';
+}
+
+const dayLabel = d => {
+  const today = new Date();
+  return d.toDateString() === today.toDateString() ? '' : `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: state.config.timezone })} · `;
+};
+
+function savedItemHTML(j) {
+  return `<div class="saved-item${state.savedId === j.key ? ' on' : ''}">
+    <button type="button" class="saved-open" data-saved="${esc(j.key)}">
+      <span class="si-time">${esc(dayLabel(j.start))}<b>${fmtTime(j.start)} → ${fmtTime(j.end)}</b> ${statusHTML(j)}</span>
+      <span class="si-route">${esc(j.from.name)} → ${esc(j.to.name)}</span>
+    </button>
+    <button type="button" class="icon-btn" data-unsave="${esc(j.key)}" title="Remove saved route" aria-label="Remove saved route">×</button></div>`;
+}
+
+// Header shortcut straight to the next saved route, plus a menu when there are more.
+function renderSavedBar() {
+  const list = savedJourneys();
+  const menu = $('#savedMenu');
+  if (!list.length) { $('#saved').innerHTML = ''; menu.hidden = true; return; }
+  const next = nextSaved();
+  $('#saved').innerHTML = `<button type="button" class="saved-next${state.savedId === next.key ? ' on' : ''}" data-saved="${esc(next.key)}" title="Open saved route">
+      ${icon('bookmark')}<span class="sn-text"><b>${esc(dayLabel(next.start))}${fmtTime(next.start)}</b> ${esc(next.to.name)}</span>${statusHTML(next)}</button>`
+    + (list.length > 1 ? `<button type="button" class="saved-more" data-action="saved-menu" aria-expanded="${!menu.hidden}" title="All saved routes">${list.length} ▾</button>` : '');
+  if (list.length < 2) menu.hidden = true;
+  if (!menu.hidden) menu.innerHTML = list.map(savedItemHTML).join('');
+}
+
+function segLabel(l, pct) {
+  if (l.kind === 'transit') return pct > 7 ? esc(l.route.display_name || '') : '';
+  if (l.kind === 'bike' || l.kind === 'scooter' || l.kind === 'cab') return pct > 4.5 ? icon(l.kind) : '';
+  return '';
+}
+
+function stripHTML(j) {
+  const t0 = j.start.getTime();
+  const total = Math.max(j.end.getTime() - t0, 1);
+  return `<div class="strip">${j.legs.map(l => {
+    const left = ((l.dep - t0) / total) * 100;
+    const width = Math.max(((l.arr - l.dep) / total) * 100, l.kind === 'walk' ? 0.6 : 1.6);
+    return `<span class="seg-b ${l.kind}${l.kmh ? ' fast' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;${blockColors(l)}">${segLabel(l, width)}</span>`;
+  }).join('')}</div>`;
+}
+
+function metaHTML(j) {
+  const parts = [];
+  if (j.bikeMeters) parts.push(`<span class="m bike">${icon('bike')} ${fmtDist(j.bikeMeters)}</span>`);
+  const first = j.transit[0];
+  if (first) parts.push(`<span class="m">${pill(first.route)} ${fmtTime(first.dep)} · ${esc(first.stops[0]?.name || '')}</span>`);
+  if (j.transit.length) parts.push(`<span class="m">${j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'Direct'}</span>`);
+  if (j.fastKmh) parts.push(`<span class="m fast">Ride at ${j.fastKmh} km/h to make it</span>`);
+  for (const r of new Set(j.rentals.map(l => l.rental.systemName || l.rental.providerId))) parts.push(`<span class="m">${icon('share')} ${esc(r)}</span>`);
+  if (j.walkMin && !j.ownBike) parts.push(`<span class="m">${icon('walk')} ${j.walkMin} min</span>`);
+  return parts.join('');
+}
+
+function timesHTML(j, f) {
+  return `<span class="tt"><b>${fmtTime(j.start)}</b><span class="arrow">→</span><b${j.delay >= 1 ? ' class="dly"' : ''}>${fmtTime(j.end)}</b>${f?.late ? `<em>+${f.lateMin} min</em>` : ''}${f?.best ? `<span class="best-tag">${state.timeMode === 'arrive' ? 'Latest departure' : 'Earliest arrival'}</span>` : ''}</span>`;
+}
+
+// ---------- timetable ----------
+
+// Packs routes into lanes like a calendar, in departure order: each route takes the first lane
+// that is free by the time it leaves. Done afresh on every render, so hiding or adding routes
+// never leaves empty lanes; routes form a staircase, and later routes reuse lanes once the
+// earlier ones are over.
+function assignLanes(routes, o, ppm) {
+  // Room for the captions: leave time above a column, arrival and total time below it.
+  const before = (o === 'v' ? 22 : 0) / ppm * MIN;
+  const after = (o === 'v' ? 42 : 14) / ppm * MIN;
+  const laneEnds = [];
+  const laneOf = new Map();
+  for (const j of [...routes].sort((a, b) => a.start - b.start || a.end - b.end)) {
+    let lane = laneEnds.findIndex(end => end <= +j.start - before);
+    if (lane === -1) lane = laneEnds.length;
+    laneEnds[lane] = +j.end + after;
+    laneOf.set(j.key, lane);
+  }
+  return laneOf;
+}
+
+function blockHTML(l, nm, p, len, o, j) {
+  const style = `--p:${p.toFixed(1)}px;--len:${Math.max(len, l.kind === 'walk' ? 1 : 2).toFixed(1)}px;${blockColors(l)}`;
+  const title = esc(legTitle(l, nm, j));
+  if (l.kind === 'walk') return `<div class="blk walk" style="${style}" title="${title}"></div>`;
+  const tier = o === 'h' ? (len >= 60 ? 2 : len >= 30 ? 1 : 0) : (len >= 34 ? 2 : len >= 16 ? 1 : 0);
+  const head = l.kind === 'transit' ? `<span>${esc(l.route.display_name || '')}</span>` : icon(l.kind === 'other' ? 'pin' : l.kind);
+  const delay = l.kind === 'transit' && !l.cancelled && l.delay >= 1 ? `<em class="dly">+${l.delay}</em>` : '';
+  // A ride you'd have to speed up for shows that speed, where it would show the duration or place.
+  const kmh = l.kmh ? `${Math.ceil(l.kmh)} km/h` : '';
+  const sub = kmh || nm.to;
+  const body = tier === 0 ? delay : `<span class="l1">${head}<span>${tier === 1 && kmh ? kmh : shortDur(l.dur)}</span>${delay}</span>${tier === 2 && sub ? `<span class="l2">${esc(sub)}</span>` : ''}`;
+  return `<div class="blk ${l.kind}${l.kmh ? ' fast' : ''}${l.cancelled ? ' cancelled' : ''}" style="${style}" title="${title}">${body}</div>`;
+}
+
+// Flags shown in a route's caption: saved, cancelled, broken connection, arrival delay.
+function capStatus(j) {
+  const bits = [];
+  if (isSaved(j.key)) bits.push(`<span class="cap-saved" title="Saved">${icon('bookmark')}</span>`);
+  if (j.cancelled) bits.push('<span class="cap-warn">✕ cancelled</span>');
+  else if (j.atRisk) bits.push('<span class="cap-warn">⚠ connection</span>');
+  return bits.join('');
+}
+
+function routeHTML(j, o, px, lane, f) {
+  const p = px(+j.start);
+  const len = px(+j.end) - p;
+  const names = legNames(j);
+  const blocks = j.legs.map((l, k) => blockHTML(l, names[k], px(+l.dep) - p, px(+l.arr) - px(+l.dep), o, j)).join('');
+  const late = f.late ? ` <em>+${f.lateMin}′</em>` : '';
+  const star = f.best ? '★ ' : '';
+  const total = `<span class="total">${fmtDur(j.duration)}</span>`;
+  const arrive = `<b${j.delay >= 1 ? ' class="dly"' : ''}>${fmtTime(j.end)}</b>`;
+  const status = capStatus(j);
+  const caps = o === 'h'
+    ? `<div class="cap">${star}${status}${total} <b>${fmtTime(j.start)}</b> → ${arrive}${late}${j.transit.length ? ` · ${j.changes ? `${j.changes} change${j.changes > 1 ? 's' : ''}` : 'direct'}` : ''}</div>`
+    : `<div class="cap cap-start">${star}${status}<b>${fmtTime(j.start)}</b></div><div class="cap cap-end">${arrive}${late}${total}</div>`;
+  const cls = ['route', f.best && 'best', f.late && 'late', f.past && 'past', j.cancelled && 'cancelled', state.hot === j.key && 'hot'].filter(Boolean).join(' ');
+  const label = `Leave ${fmtTime(j.start)}, arrive ${fmtTime(j.end)}, ${fmtDur(j.duration)}${j.fastKmh ? `, riding at ${j.fastKmh} km/h` : ''}`;
+  return `<div class="${cls}" data-key="${esc(j.key)}" style="--p:${p.toFixed(1)}px;--len:${len.toFixed(1)}px;--lane:${lane}" role="button" tabindex="0" aria-label="${esc(label)}">${caps}<div class="track"></div>${blocks}</div>`;
+}
+
+function edgeHTML(dir, p, len) {
+  const st = state.paging[dir];
+  if (st === 'off') return '';
+  const label = {
+    loading: `<span class="spin"></span>Finding ${dir} routes…`,
+    done: `No ${dir} routes found`,
+    error: `Couldn't load ${dir} routes · retry`,
+    idle: dir === 'later' ? 'Later routes ›' : '‹ Earlier routes',
+  }[st];
+  return `<div class="edge ${dir} is-${st}" style="--p:${p.toFixed(1)}px;--len:${len}px"><button type="button" data-more="${dir}"${st === 'loading' || st === 'done' ? ' disabled' : ''}>${label}</button></div>`;
+}
+
+function renderSchedule() {
+  const el = $('#schedule');
+  const s = state.sched;
+  if (state.status === 'loading') {
+    s.o = null;
+    el.className = 'schedule';
+    el.innerHTML = '<div class="sch-skel"><div></div><div></div><div></div><div></div></div>';
+    return;
+  }
+  if (state.status !== 'ok') { s.o = null; el.innerHTML = ''; return; }
+  const W = el.clientWidth;
+  const H = el.clientHeight;
+  if (!W || !H) return;
+
+  const o = W >= 640 ? 'h' : 'v';
+  const client = o === 'h' ? W : H;
+  const routes = shownJourneys();
+  // On a new search, zoom so a typical trip plus some slack takes most of the screen.
+  if (s.fit.has(o) && routes.length) {
+    s.fit.delete(o);
+    const durs = routes.filter(j => j.transit.length).map(j => j.duration / 60).sort((a, b) => a - b);
+    const typical = durs.length ? durs[Math.floor(durs.length / 2)] : 60;
+    const want = (client * 0.78) / (typical + 30);
+    state.ppm[o] = [...ZOOMS].reverse().find(z => z <= want) ?? ZOOMS[0];
+    s.anchor = null;
+  }
+  const ppm = state.ppm[o];
+  const flags = journeyFlags(routes);
+  const target = targetTime();
+  const now = Date.now();
+  const ref = target ? +target : now;
+
+  const Q = 15 * MIN;
+  let t0 = Math.min(ref, ...routes.map(j => +j.start)) - 20 * MIN;
+  let t1 = Math.max(ref, ...routes.map(j => +j.end)) + 20 * MIN;
+  if (!target) t0 = Math.min(t0, now - 10 * MIN);
+  t0 = Math.floor(t0 / Q) * Q;
+  t1 = Math.ceil(t1 / Q) * Q;
+  const E0 = state.paging.earlier === 'off' ? 0 : EDGE[o];
+  // On a phone the search pill floats over the bottom of the screen; leave room under the
+  // "Later routes" button so it can be scrolled clear of the pill.
+  const E1 = EDGE[o] + (o === 'v' ? 80 : 0);
+  const px = t => E0 + ((t - t0) / MIN) * ppm;
+  const mainLen = px(t1) + E1;
+
+  const laneOf = assignLanes(routes, o, ppm);
+  const lanes = Math.max(1, ...routes.map(j => laneOf.get(j.key) + 1));
+  const laneW = o === 'v' ? Math.max(72, Math.min(130, (W - AXIS_W - 10) / lanes)) : 0;
+  // The canvas is at least as tall as the viewport through CSS, so the search bar sliding away
+  // (which changes only the height) needs no re-render.
+  const cross = o === 'h' ? lanes * LANE_H + 16 : Math.max(lanes * laneW + 10, W - AXIS_W);
+
+  let ticks = '';
+  let grid = '';
+  const every = ppm * 15 >= 44 ? 15 : ppm * 30 >= 44 ? 30 : 60;
+  for (let t = t0; t <= t1; t += Q) {
+    const label = fmtTime(new Date(t));
+    const mm = +label.slice(3);
+    grid += `<div class="gl${mm === 0 ? ' hour' : ''}" style="--p:${px(t)}px"></div>`;
+    if (mm % every === 0) ticks += `<span class="tick${mm === 0 ? ' hour' : ''}" style="--p:${px(t)}px">${label}</span>`;
+  }
+
+  let marks = '';
+  let lines = '';
+  const mark = (cls, t, text) => {
+    if (t < t0 || t > t1) return;
+    marks += `<span class="amark ${cls}" style="--p:${px(t)}px">${text}</span>`;
+    lines += `<div class="mline ${cls}" style="--p:${px(t)}px"></div>`;
+  };
+  const shade = (a, b) => (b > a ? `<div class="shade" style="--p:${a}px;--len:${b - a}px"></div>` : '');
+  let shades = '';
+  if (state.timeMode === 'now') shades = shade(0, px(now));
+  else if (state.timeMode === 'depart') shades = shade(E0, px(+target));
+  else shades = shade(px(+target), px(t1));
+  mark('now', now, o === 'h' ? `Now ${fmtTime(new Date(now))}` : fmtTime(new Date(now)));
+  if (target) mark('target', +target, o === 'h' ? `${state.timeMode === 'arrive' ? 'Arrive by' : 'Depart'} ${fmtTime(target)}` : fmtTime(target));
+
+  const edges = (E0 ? edgeHTML('earlier', 0, E0) : '') + edgeHTML('later', px(t1), E1);
+  const body = routes.map(j => routeHTML(j, o, px, laneOf.get(j.key), flags.get(j.key))).join('');
+
+  const canvasStyle = o === 'h' ? `width:${mainLen}px;height:${AXIS_H + cross}px` : `width:${AXIS_W + cross}px;height:${mainLen}px;--laneW:${laneW}px`;
+  const axisStyle = o === 'h' ? `width:${mainLen}px` : `height:${mainLen}px`;
+  const bodyStyle = o === 'h' ? `width:${mainLen}px` : `height:${mainLen}px`;
+  el.className = `schedule ${o}${state.hot ? ' has-hot' : ''}`;
+  el.innerHTML = `<div class="sch-canvas" style="${canvasStyle}">
+    <div class="sch-axis" style="${axisStyle}">${ticks}${marks}</div>
+    <div class="sch-body" style="${bodyStyle}">${grid}${shades}${edges}${body}${lines}</div></div>`;
+
+  // Keep the same moment at the start of the viewport across re-renders and page loads.
+  Object.assign(s, { o, ppm, t0, E0 });
+  if (s.anchor == null) {
+    // Arrive-by: the deadline sits near the far end so on-time routes are fully in view.
+    const lead = state.timeMode === 'arrive' ? (client * 0.82) / ppm : state.timeMode === 'depart' ? 10 : 6;
+    s.anchor = ref - lead * MIN;
+  }
+  const pos = Math.max(0, px(s.anchor));
+  if (o === 'h') el.scrollLeft = pos; else el.scrollTop = pos;
+  // Remember where we put it, so the scroll event this causes isn't mistaken for the user.
+  s.expect = { x: el.scrollLeft, y: el.scrollTop };
+  s.last = { ...s.expect };
+}
+
+function zoom(step) {
+  const s = state.sched;
+  const o = s.o;
+  if (!o) return;
+  const el = $('#schedule');
+  const client = o === 'h' ? el.clientWidth : el.clientHeight;
+  const center = s.anchor + (client / 2 / s.ppm) * MIN;
+  const nearest = ZOOMS.reduce((best, z, k) => (Math.abs(z - state.ppm[o]) < Math.abs(ZOOMS[best] - state.ppm[o]) ? k : best), 0);
+  const next = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, nearest + step))];
+  if (next === state.ppm[o]) return;
+  state.ppm[o] = next;
+  s.anchor = center - (client / 2 / next) * MIN;
+  renderSchedule();
+  renderViewbar();
+}
+
+function setHot(key) {
+  if (state.hot === key) return;
+  state.hot = key;
+  document.querySelectorAll('[data-key]').forEach(n => n.classList.toggle('hot', n.dataset.key === key));
+  $('#schedule').classList.toggle('has-hot', !!key);
+}
+
+function openDetail(key) {
+  if (!state.byKey.has(key)) return;
+  state.selected = key;
+  state.savedId = null;
+  state.editing = false;
+  setHot(null);
+  writeHash();
+  render();
+  $('#detail').scrollTop = 0;
+  liveThenRender([state.byKey.get(key)]);
+}
+
+// ---------- detail ----------
+
+// A ride's departure time: struck-through timetable time when it is late or cancelled.
+function depTimeHTML(l) {
+  if (l.cancelled) return `<time class="cancel"><s>${fmtTime(l.schedDep || l.dep)}</s></time>`;
+  if (l.delay >= 1) return `<time class="late">${fmtTime(l.dep)}<s>${fmtTime(l.schedDep)}</s></time>`;
+  return `<time class="${l.live?.isLive ? 'ontime' : ''}">${fmtTime(l.dep)}</time>`;
+}
+
+function liveLabel(l) {
+  if (l.cancelled) return '<span class="st cancel">Cancelled</span>';
+  if (l.delay >= 1) return `<span class="st late">${l.delay} min late</span>`;
+  if (l.live?.isLive) return '<span class="st ok">On time</span>';
+  return '';
+}
+
+// Platforms come with live data, shortly before departure; trains say so until then.
+function trackHTML(l) {
+  if (l.live?.platform) return `<span class="trk${l.live.platformChanged ? ' changed' : ''}">Track ${esc(l.live.platform)}</span>`;
+  return '';
+}
+
+// The body of one segment, between its start and end bubbles.
+function legHTML(l, j) {
+  let body;
+  if (l.kind === 'transit') {
+    const subs = [liveLabel(l), esc(l.route.agency || ''), l.trainNo && `train ${esc(l.trainNo)}`, j.ownBike && l.bikesAllowed === false && '<span class="st cancel">No bikes on board</span>'].filter(Boolean);
+    const between = l.stops.slice(1, -1);
+    // Timetable times along the way, moved by the ride's current delay.
+    const shift = l.schedDep && l.dep ? l.dep - l.schedDep : 0;
+    const stopsList = between.map(s => `<li><time>${s.sched ? fmtTime(new Date(+s.sched + shift)) : ''}</time>${esc(s.name)}</li>`).join('');
+    body = `<div class="tl-title">${icon(l.vehicle)} ${pill(l.route)} ${l.headsign ? `<span>towards ${esc(l.headsign)}</span>` : ''}</div>
+      ${subs.length ? `<div class="tl-sub">${subs.join(' · ')}</div>` : ''}
+      ${between.length
+        ? `<details class="stops"><summary>${between.length} stop${between.length > 1 ? 's' : ''} · ${fmtDur(l.dur)}</summary><ol>${stopsList}</ol></details>`
+        : `<div class="stops">Non-stop · ${fmtDur(l.dur)}</div>`}`;
+  } else {
+    const titles = { bike: j.ownBike ? 'Ride your bike' : 'Cycle', scooter: 'Ride a scooter', cab: 'Taxi or on-demand ride', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: titleCase(l.mode || 'Travel') };
+    const r = l.rental;
+    const title = r ? `${esc(r.systemName || r.providerId)}${r.electric ? ' e-bike' : ''}` : titles[l.kind];
+    const rule = r && ({ ROUNDTRIP_STATION: 'Round trip: bring it back to this station', ANY_STATION: 'Park at any station or hub' }[r.returnConstraint]
+      || (r.toStationName ? `Park at ${esc(r.toStationName)}` : ''));
+    const detail = [l.distance ? fmtDist(l.distance) : null, fmtDur(l.dur), r?.electric && `timed at ${EBIKE_KMH} km/h`, l.kmh && `<b class="fast">${Math.ceil(l.kmh)} km/h, faster than your usual ${RIDE_KMH}</b>`].filter(Boolean).join(' · ');
+    body = `<div class="tl-title">${icon(l.kind === 'other' ? 'pin' : l.kind)} ${title}</div><div class="tl-sub">${detail}</div>${rule ? `<div class="tl-sub">${rule}</div>` : ''}`;
+  }
+  return `<li class="tl-leg ${l.kind}${l.cancelled ? ' cancelled' : ''}" style="--c:${esc(legColor(l))}"><time></time><span class="mark"></span><div class="tl-body">${body}</div></li>`;
+}
+
+// A bubble where a segment starts or ends. The segment's line runs out of a start bubble and
+// into an end bubble; the journey's origin and destination get their own markers.
+function stopHTML({ leg = null, side, cls = '', time = null, timeHTML = '', timeCls = '', name = '', sub = '', extra = '' }) {
+  const rail = leg ? `<i class="rail-${side === 'start' ? 'out' : 'in'}${leg.kind === 'walk' ? ' dotted' : ''}"></i>` : '';
+  return `<li class="tl-stop ${side} ${cls}" style="--c:${esc(leg ? legColor(leg) : 'var(--faint)')}">${timeHTML || `<time class="${timeCls}">${time ? fmtTime(time) : ''}</time>`}<span class="mark">${rail}</span>
+    <div class="tl-place"><b>${esc(name)}</b>${extra}${sub ? `<small>${esc(sub)}</small>` : ''}</div></li>`;
+}
+
+// The space between two segments: as tall as the time it leaves you (within limits), labelled
+// with that time. Walks through stations happen in here instead of getting their own row.
+function gapHTML(prev, next, walkSec) {
+  const sec = (next.dep - prev.arr) / 1000;
+  const min = Math.round(sec / 60);
+  const height = Math.max(22, Math.min(120, 16 + Math.max(0, min) * 3));
+  let label;
+  if (next.atRisk) {
+    label = `<span class="warn">⚠ You get there at ${fmtTime(prev.arr)}, but the ${esc(next.route?.display_name || 'next ride')} leaves at ${fmtTime(next.dep)}</span>`;
+  } else {
+    const what = prev.kind === 'transit' && next.kind === 'transit' ? 'change'
+      : next.kind === 'transit' ? 'to the platform'
+      : prev.kind === 'transit' ? 'out of the station'
+      : walkSec ? 'walk' : '';
+    const walk = walkSec >= 4.5 * 60 && what !== 'walk' ? ` · incl. ${Math.round(walkSec / 60)} min walk` : '';
+    label = `<span class="gap-label">${min < 1 ? 'Just in time' : `${fmtDur(sec)}${what ? ` ${what}` : ''}${walk}`}</span>`;
+  }
+  return `<li class="tl-gap" style="--h:${height}px"><time></time><span class="mark"></span><div class="tl-gap-body">${label}</div></li>`;
+}
+
+// Walks with your bike, changes and short walks aren't segments of their own.
+const isSegment = (l, j) => l.kind !== 'walk' || (!j.ownBike && !l.transfer && l.dur >= 5 * 60);
+
+function renderDetail(j) {
+  const names = legNames(j);
+  const legs = j.legs;
+  const f = j.saved ? null : journeyFlags(shownJourneys()).get(j.key);
+  let segs = legs.map((l, k) => ({ l, k })).filter(({ l }) => isSegment(l, j));
+  if (!segs.length) segs = legs.map((l, k) => ({ l, k }));
+  const walked = (from, to) => sum(legs.slice(from, to).map(l => l.dur));
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const rows = [];
+
+  if (first.k > 0) {
+    rows.push(stopHTML({ side: 'end', cls: 'origin', time: j.start, name: j.from.name, sub: j.from.address }));
+    rows.push(gapHTML({ arr: j.start, kind: 'origin' }, first.l, walked(0, first.k)));
+  }
+  segs.forEach(({ l, k }, i) => {
+    if (i > 0) rows.push(gapHTML(segs[i - 1].l, l, walked(segs[i - 1].k + 1, k)));
+    const origin = i === 0 && first.k === 0;
+    const destination = i === segs.length - 1 && last.k === legs.length - 1;
+    rows.push(stopHTML({
+      leg: l, side: 'start', cls: origin ? 'origin' : '',
+      timeHTML: l.kind === 'transit' ? depTimeHTML(l) : '', time: l.dep,
+      name: origin ? j.from.name : names[k].from, sub: origin ? j.from.address : '',
+      extra: l.kind === 'transit' ? trackHTML(l) : '',
+    }));
+    rows.push(legHTML(l, j));
+    rows.push(stopHTML({
+      leg: l, side: 'end', cls: destination ? 'destination' : '', time: l.arr,
+      timeCls: (l.kind === 'transit' && l.delay >= 1) || (destination && j.delay >= 1) ? 'late' : '',
+      name: destination ? j.to.name : names[k].to, sub: destination ? j.to.address : '',
+    }));
+  });
+  if (last.k < legs.length - 1) {
+    rows.push(gapHTML(last.l, { dep: j.end, kind: 'destination' }, walked(last.k + 1, legs.length)));
+    rows.push(stopHTML({ side: 'start', cls: 'destination', time: j.end, timeCls: j.delay >= 1 ? 'late' : '', name: j.to.name, sub: j.to.address }));
+  }
+
+  const saved = isSaved(j.key);
+  const hasLive = j.transit.some(l => l.live?.isLive);
+  const liveNote = hasLive
+    ? `<span class="live-dot"></span>Live times · updated ${fmtTime(j.liveAt)}`
+    : 'Timetable times · live times appear closer to departure';
+  const back = `<button type="button" class="back" data-action="back">${icon('back')} ${j.saved ? 'Back' : 'Schedule'}</button>`;
+
+  // Keep expanded stop lists open when the same route re-renders after a live refresh.
+  const el = $('#detail');
+  const open = el.dataset.shown === j.key ? [...el.querySelectorAll('details')].map(d => d.open) : [];
+  el.dataset.shown = j.key;
+  el.innerHTML = `<div class="d-top">${back}
+      <button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button></div>
+    <div class="d-head">
+      ${j.saved ? `<div class="d-route">${esc(dayLabel(j.start))}${esc(j.from.name)} → ${esc(j.to.name)}</div>` : ''}
+      <div class="card-head">${timesHTML(j, f)}<span class="dur">${fmtDur(j.duration)}</span></div>
+      ${stripHTML(j)}
+      <div class="d-chips">${metaHTML(j)}</div>
+      ${j.notes.length ? `<ul class="d-notes">${j.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      <div class="d-live">${statusHTML(j)} ${liveNote}</div>
+    </div>
+    <ol class="tl">${rows.join('')}</ol>`;
+  el.querySelectorAll('details').forEach((d, k) => { if (open[k]) d.open = true; });
+}
+
+// ---------- events ----------
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const menu = $('#savedMenu');
+  if (!menu.hidden && !t.closest('#savedMenu, #saved')) { menu.hidden = true; renderSavedBar(); }
+  const savedOpen = t.closest('[data-saved]');
+  if (savedOpen) { openSaved(savedOpen.dataset.saved); return; }
+  const unsave = t.closest('[data-unsave]');
+  if (unsave) { unsaveJourney(unsave.dataset.unsave); writeHash(); render(); return; }
+  const tab = t.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; state.savedId = null; plan(); return; }
+  const more = t.closest('[data-more]');
+  if (more) {
+    if (state.paging[more.dataset.more] === 'error') state.paging[more.dataset.more] = 'idle';
+    loadMore(more.dataset.more);
+    return;
+  }
+  const route = t.closest('[data-key]');
+  if (route) { openDetail(route.dataset.key); return; }
+  const z = t.closest('[data-zoom]');
+  if (z) { zoom(+z.dataset.zoom); return; }
+  const trip = t.closest('[data-trip]');
+  if (trip) {
+    const saved = store.get('trips', [])[+trip.dataset.trip];
+    if (saved) { setEndpoint('from', saved.from, { replan: false }); setEndpoint('to', saved.to); }
+    return;
+  }
+  if (t.closest('#summary')) { state.editing = true; render(); return; }
+  if (t.closest('#done')) { state.editing = false; render(); return; }
+  if (t.closest('#pill')) { setHeader(true); return; }
+  const action = t.closest('[data-action]')?.dataset.action;
+  if (action === 'retry') plan();
+  if (action === 'back') {
+    if (state.savedId) state.savedId = null; else state.selected = null;
+    writeHash();
+    render();
+  }
+  if (action === 'saved-menu') { menu.hidden = !menu.hidden; renderSavedBar(); }
+  if (action === 'toggle-all') { state.showAll = !state.showAll; render(); }
+  if (action === 'toggle-save') {
+    const j = currentDetail();
+    if (!j) return;
+    if (isSaved(j.key)) unsaveJourney(j.key); else saveJourney(j);
+    writeHash();
+    render();
+  }
+});
+
+const schedEl = $('#schedule');
+schedEl.addEventListener('pointerover', e => { if (e.pointerType === 'mouse') setHot(e.target.closest('[data-key]')?.dataset.key ?? null); });
+schedEl.addEventListener('pointerleave', () => setHot(null));
+schedEl.addEventListener('keydown', e => {
+  const route = e.target.closest('.route[data-key]');
+  if (route && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(route.dataset.key); }
+});
+
+// Scrolling forward (down or right) hides the search bar; scrolling back a bit shows it again.
+let travel = 0;
+schedEl.addEventListener('scroll', () => {
+  const s = state.sched;
+  const x = schedEl.scrollLeft;
+  const y = schedEl.scrollTop;
+  const ours = s.expect && x === s.expect.x && y === s.expect.y;
+  const delta = (x - s.last.x) + (y - s.last.y);
+  s.last = { x, y };
+  s.expect = null;
+  if (ours || !s.o) return;
+  const p = s.o === 'h' ? x : y;
+  s.anchor = s.t0 + ((p - s.E0) / s.ppm) * MIN;
+
+  // Scrolling the timetable means you're done with the search fields for now.
+  if (state.editing) { state.editing = false; document.body.classList.remove('editing'); }
+  if ($('#top').contains(document.activeElement)) document.activeElement.blur();
+  travel = Math.sign(delta) === Math.sign(travel) ? travel + delta : delta;
+  if (travel > 40) setHeader(false);
+  else if (travel < -90) setHeader(true);
+}, { passive: true });
+$('#top').addEventListener('focusin', () => setHeader(true));
+
+let lastWheelZoom = 0;
+schedEl.addEventListener('wheel', e => {
+  const s = state.sched;
+  if (!s.o) return;
+  if (e.ctrlKey) {
+    e.preventDefault();
+    if (performance.now() - lastWheelZoom > 140) { lastWheelZoom = performance.now(); zoom(e.deltaY < 0 ? 1 : -1); }
+    return;
+  }
+  // A plain mouse wheel scrolls the time axis when the lanes already fit vertically.
+  if (s.o === 'h' && !e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX) && schedEl.scrollHeight <= schedEl.clientHeight + 1) {
+    e.preventDefault();
+    schedEl.scrollLeft += e.deltaY;
+  }
+}, { passive: false });
+
+// Only a width change can alter the layout (orientation, column widths); height changes come
+// from the search bar sliding and are absorbed by CSS.
+let resizeFrame = 0;
+let lastWidth = 0;
+new ResizeObserver(() => {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(() => {
+    const w = schedEl.clientWidth;
+    if (document.body.dataset.stage !== 'schedule' || (w === lastWidth && state.sched.o)) return;
+    lastWidth = w;
+    renderSchedule();
+  });
+}).observe(schedEl);
+narrowQuery.addEventListener('change', () => render());
+
+const topEl = $('#top');
+new ResizeObserver(() => document.documentElement.style.setProperty('--top-h', `${topEl.offsetHeight}px`)).observe(topEl);
+
+// Move the "now" line along.
+setInterval(() => { if (document.body.dataset.stage === 'schedule' && state.status === 'ok') renderSchedule(); }, 30000);
+// Live delays and tracks: every minute, and straight away when you come back to the tab.
+setInterval(liveTick, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); });
+
+$('#swap').innerHTML = icon('swap');
+$('#swap').addEventListener('click', () => {
+  const { from, to } = state;
+  setEndpoint('from', to, { replan: false });
+  setEndpoint('to', from);
+});
+$('.locate').innerHTML = icon('locate');
+$('.refresh').innerHTML = icon('refresh');
+$('.locate').addEventListener('click', () => locate('from'));
+
+const timeMode = $('#time-mode');
+const timeInput = $('#time');
+timeMode.addEventListener('change', () => {
+  state.timeMode = timeMode.value;
+  timeInput.hidden = state.timeMode === 'now';
+  if (!timeInput.hidden && !timeInput.value) timeInput.value = defaultTimeValue();
+  state.time = state.timeMode === 'now' ? '' : timeInput.value;
+  state.savedId = null;
+  plan();
+});
+timeInput.addEventListener('change', () => { state.time = timeInput.value; if (state.time) { state.savedId = null; plan(); } });
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && currentDetail() && !e.target.closest('input')) {
+    if (state.savedId) state.savedId = null; else state.selected = null;
+    writeHash();
+    render();
+  }
+});
+
+// ---------- boot ----------
+
+function applyHash() {
+  readHash();
+  timeMode.value = state.timeMode;
+  timeInput.hidden = state.timeMode === 'now';
+  timeInput.value = state.time || '';
+  for (const role of ['from', 'to']) { $('#' + role).value = state[role]?.name || ''; placeMarker(role); }
+}
+
+setupField('from');
+setupField('to');
+pruneSaved();
+applyHash();
+// Our own hash writes use replaceState, so this only fires for pasted or bookmarked links.
+addEventListener('hashchange', () => { applyHash(); plan(); });
+
+(async () => {
+  try {
+    const cfg = await api('/api/config');
+    state.config = cfg;
+    try { timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: cfg.timezone }); } catch { /* keep local */ }
+    const b = cfg.bounds;
+    if (!state.from && !state.to && b) map.fitBounds([b.southwest, b.northeast]);
+  } catch { /* defaults are fine */ }
+  plan();
+  if (state.savedId) liveThenRender([currentDetail()]);
+})();

@@ -10,12 +10,15 @@ mod lastmile;
 mod model;
 mod motis;
 mod overshoot;
+mod planner;
 mod render;
+mod server;
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Europe::Brussels;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
+use planner::Carry;
 
 #[derive(Parser)]
 #[command(
@@ -33,16 +36,6 @@ struct Cli {
     motis: String,
     #[command(subcommand)]
     cmd: Cmd,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum Carry {
-    /// Walk only around transit.
-    Foot,
-    /// Folding bike: ride before/after transit, bike must be allowed on board.
-    Folding,
-    /// Use shared bikes (GBFS) for first/last mile.
-    Shared,
 }
 
 #[derive(Subcommand)]
@@ -71,6 +64,17 @@ enum Cmd {
         /// Max minutes on the bike / rental before and after transit.
         #[arg(long, default_value_t = 30)]
         max_bike: u32,
+        /// Your cycling speed on your own (folding) bike, km/h.
+        #[arg(long, default_value_t = 18.0)]
+        kmh: f64,
+    },
+    /// Serve the web UI and its JSON API.
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:8737", env = "OVERSTAP_LISTEN")]
+        listen: String,
+        /// Directory with the web UI's static files.
+        #[arg(long, default_value = "web", env = "OVERSTAP_WEB")]
+        web: std::path::PathBuf,
     },
     /// You're on a train (use cases 2 and 3): evaluate getting off at each of
     /// the next N stops and continuing from there. `--delay` simulates a delay.
@@ -126,94 +130,6 @@ pub fn resolve_place(c: &motis::Client, s: &str) -> Result<String> {
     })
 }
 
-fn parse_coord(s: &str) -> Option<(f64, f64)> {
-    let mut p = s.split(',').map(|x| x.trim().parse::<f64>());
-    match (p.next(), p.next()) {
-        (Some(Ok(a)), Some(Ok(b))) => Some((a, b)),
-        _ => None,
-    }
-}
-
-/// Use case 1: compare walking, MOTIS's rental suggestions (corrected for
-/// hub-only providers) and round-trip station bikes priced as a tour.
-fn shared_last_mile(
-    c: &motis::Client,
-    q: &motis::PlanQuery,
-    rental_its: Vec<motis::Itinerary>,
-    dest: Option<(f64, f64)>,
-    show: usize,
-) -> Result<()> {
-    let Some(dest) = dest else {
-        bail!("--carry shared needs the destination as lat,lon")
-    };
-    let mut walk_q = q.clone();
-    walk_q.pre_transit_modes = vec!["WALK".into()];
-    walk_q.post_transit_modes = vec!["WALK".into()];
-    // Long walks are fine here: we want evening itineraries to compare bikes against.
-    walk_q.max_pre_transit_s = Some(3600);
-    walk_q.max_post_transit_s = Some(3600);
-    let walk_its = c.plan(&walk_q)?.itineraries;
-
-    let mut cands: Vec<lastmile::Candidate> = vec![];
-    for it in walk_its.iter() {
-        cands.push(lastmile::Candidate {
-            label: "walk".into(),
-            depart: it.start_time,
-            arrive: it.end_time,
-            notes: vec![],
-            base: it.clone(),
-        });
-        if let Some(t) = lastmile::tour_option(c, it, dest)? {
-            cands.push(t);
-        }
-    }
-    for it in rental_its.iter() {
-        match lastmile::fix_hub_only(c, it, dest)? {
-            Some(fixed) => cands.push(fixed),
-            None if it.legs.iter().any(|l| l.mode == "RENTAL") => cands.push(lastmile::Candidate {
-                label: "rental (as MOTIS planned)".into(),
-                depart: it.start_time,
-                arrive: it.end_time,
-                notes: vec![],
-                base: it.clone(),
-            }),
-            None => {}
-        }
-    }
-    cands.sort_by_key(|c| (c.arrive, -c.depart.timestamp()));
-    cands.dedup_by_key(|c| (c.label.clone(), c.arrive, c.depart));
-    for (n, cand) in cands.iter().take(show).enumerate() {
-        println!(
-            "\n#{} {} → {}  ({} min)  last mile: {}",
-            n + 1,
-            render::hm(cand.depart),
-            render::hm(cand.arrive),
-            (cand.arrive - cand.depart).num_minutes(),
-            cand.label
-        );
-        let transit: Vec<String> = cand
-            .base
-            .legs
-            .iter()
-            .filter(|l| !matches!(l.mode.as_str(), "WALK" | "BIKE" | "RENTAL"))
-            .map(|l| {
-                format!(
-                    "{} {}→{} {}",
-                    l.display_name.clone().unwrap_or(l.mode.clone()),
-                    render::hm(l.start_time),
-                    render::hm(l.end_time),
-                    l.to.name
-                )
-            })
-            .collect();
-        println!("   transit: {}", transit.join(" | "));
-        for note in &cand.notes {
-            println!("   note: {note}");
-        }
-    }
-    Ok(())
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let c = motis::Client::new(&cli.motis);
@@ -246,48 +162,38 @@ fn main() -> Result<()> {
             window,
             show,
             max_bike,
+            kmh,
         } => {
-            let mut q = motis::PlanQuery::new(resolve_place(&c, &from)?, resolve_place(&c, &to)?);
-            q.time = at.as_deref().map(parse_local).transpose()?;
-            q.search_window_s = window * 60;
-            q.min_transfer_time_min = min_transfer;
-            q.direct_modes = vec!["WALK".into(), "BIKE".into()];
-            match carry {
-                Carry::Foot => {
-                    // MOTIS defaults to 15 min; a 2 km walk from the station is normal.
-                    q.max_pre_transit_s = Some(3600);
-                    q.max_post_transit_s = Some(3600);
-                }
-                Carry::Folding => {
-                    q.pre_transit_modes = vec!["BIKE".into()];
-                    q.post_transit_modes = vec!["BIKE".into()];
-                    q.max_pre_transit_s = Some(max_bike * 60);
-                    q.max_post_transit_s = Some(max_bike * 60);
-                    q.max_direct_s = Some(max_bike.max(60) * 60 * 3);
-                    q.require_bike_transport = true;
-                }
-                Carry::Shared => {
-                    q.pre_transit_modes = vec!["WALK".into(), "RENTAL".into()];
-                    q.post_transit_modes = vec!["WALK".into(), "RENTAL".into()];
-                    q.max_pre_transit_s = Some(max_bike * 60);
-                    q.max_post_transit_s = Some(max_bike * 60);
+            let mut r =
+                planner::Request::new(resolve_place(&c, &from)?, resolve_place(&c, &to)?, carry);
+            r.time = at.as_deref().map(parse_local).transpose()?;
+            r.window_min = window;
+            r.min_transfer_min = min_transfer;
+            r.max_bike_min = max_bike;
+            r.ride_kmh = kmh;
+            let mut js = planner::plan(&c, &r)?;
+            // Best first: earliest arrival, then latest departure.
+            js.sort_by_key(|j| (j.it.end_time, -j.it.start_time.timestamp()));
+            let (direct, its): (Vec<_>, Vec<_>) = js
+                .into_iter()
+                .partition(|j| j.it.transfers == 0 && !j.it.legs.iter().any(|l| l.is_transit()));
+            for (n, j) in its.iter().take(show).enumerate() {
+                let label = j
+                    .label
+                    .as_deref()
+                    .map(|l| format!("  [{l}]"))
+                    .unwrap_or_default();
+                println!("\n#{} {}{label}", n + 1, render::summary(&j.it));
+                print!("{}", render::legs(&j.it));
+                for note in &j.notes {
+                    println!("   note: {note}");
                 }
             }
-            let r = c.plan(&q)?;
-            let mut its = r.itineraries;
-            its.sort_by_key(|i| (i.end_time, -i.start_time.timestamp()));
-            if matches!(carry, Carry::Shared) {
-                let dest = parse_coord(&q.to);
-                return shared_last_mile(&c, &q, its, dest, show);
-            }
-            for (n, it) in its.iter().take(show).enumerate() {
-                println!("\n#{} {}", n + 1, render::summary(it));
-                print!("{}", render::legs(it));
-            }
-            for it in r.direct.iter().take(2) {
-                println!("\n[direct] {}", render::summary(it));
+            for j in direct.iter().take(2) {
+                println!("\n[direct] {}", render::summary(&j.it));
             }
         }
+        Cmd::Serve { listen, web } => server::run(c, &listen, &web)?,
         Cmd::Overshot {
             to,
             trip,

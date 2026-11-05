@@ -105,7 +105,7 @@ fn uc1_shared_bikes_respect_provider_rules() {
     }
     // Blue-bike (round-trip only) must be offered as a tour.
     assert!(
-        out.contains("blue-bike") && out.contains("round trip"),
+        out.to_lowercase().contains("blue-bike round trip"),
         "Blue-bike tour option missing"
     );
 }

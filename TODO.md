@@ -21,7 +21,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Run the three use cases → `docs/results-2026-10-29.md`
 - [ ] Pick a permanent host (homelab/VPS; 2 GB RAM serving is enough, ~4 GB import)
 - [ ] Enable tiles for the web UI
-- [ ] Nightly re-import (GTFS changes daily)
+- [ ] Nightly re-import (GTFS changes daily; De Lijn RT matching dropped to 75 % with a week-old import)
 - [ ] Add TEC, STIB, more GBFS (Bolt, Lime, Voi, Donkey Kortrijk/Westhoek)
 - [x] Hoppy Kempen as a generated static GBFS feed (`tools/hoppy_gbfs.py`, ADR-011)
 - [ ] Hoppy: ask Hoppy / IOK (Vervoerregio Kempen) for a public GBFS feed with live availability
@@ -56,9 +56,17 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 
 ## UI (see docs/ui-concepts.md)
 
+- [x] Web UI v0: bike-transit lane timetable on overstap data (`overstap serve`, `web/`, ADR-012)
+- [ ] Deploy next to MOTIS on the NAS (Docker image with motis + overstap, cloudflared like bike-transit)
+- [ ] PWA manifest + icon, so it opens full-screen from the home screen
+- [ ] Boarding buffer for the folding bike (fold + platform): bike legs end N min before departure
+- [ ] Shared tab: search e-bike rentals at 20 km/h too (ADR-013); parallelise the street routes
+- [ ] Show rental availability (bikes at pickup, docks at drop-off) on rental blocks
+- [ ] "Open in app" links for rentals (MOTIS gives `rentalUriAndroid/IOS`)
+- [ ] Lane detail via one corridor vs another (canvas "Two corridors" D/E): group or tint lanes by corridor
+- [ ] Alternatives for a selected route (canvas round 4): per-leg variants, using MOTIS `numLegAlternatives`
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
-- [ ] Mobile PWA, reusing the old app's timeline as the comparison view
 - [ ] Ride mode: live position on the space-time line, precomputed fallback per change, buzz only when action/spare/arrival changes
 - [ ] Log GBFS station stock (predict empty stations)
 - [ ] Post-trip review: user-reported delays for vehicles without live data

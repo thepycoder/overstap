@@ -39,3 +39,11 @@ wget https://download.geofabrik.de/europe/belgium-latest.osm.pbf
 ```
 
 Ensure GTFS timetables are current; an outdated feed has no trips for upcoming dates.
+
+## Adding a feed after import
+
+`motis server` reads `data/config.yml`, the copy `motis import` makes, not the
+`config.yml` next to it. A GBFS feed (they load at runtime) can be added without
+re-importing by adding it to both files and restarting the server. Timetables
+(GTFS) need a re-import. For Hoppy: `python3 ../../tools/hoppy_gbfs.py --region Kempen --out gbfs/hoppy-kempen`
+(the cloud workspace used an absolute path in `data/config.yml`).

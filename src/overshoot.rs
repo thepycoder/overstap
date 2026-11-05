@@ -34,10 +34,7 @@ pub struct Option_ {
 
 impl Option_ {
     pub fn arrival(&self) -> Option<DateTime<Utc>> {
-        match &self.best {
-            Some(it) => Some(it.end_time),
-            None => None,
-        }
+        self.best.as_ref().map(|it| it.end_time)
     }
 }
 

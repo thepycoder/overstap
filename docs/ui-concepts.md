@@ -102,3 +102,12 @@ Finding: biking further down the line never buys margin here: the train covers M
 
 Backend needs: per-leg alternative generation (ride/bus to each stop of the chosen train,
 adjacent departures per train leg), dominance pruning, weather input, spread from delay log.
+
+## Decision (user, 2026-11-05): first build the lane-timeline screens
+
+"Combine it with the UI from bike-transit; focus not on the space-time diagrams but on the
+lane-timeline screens." So `web/` is the bike-transit lane timetable on overstap data
+(ADR-012): results as lanes (phone: vertical, desktop: horizontal), ★ best option, beaten
+options hidden behind "+N slower", earlier/later paging, route detail with stop list, map,
+live delays and saved routes. Space-time charts, ride mode and the variation views (round 4)
+come later as views over the same `/api/journeys` data.

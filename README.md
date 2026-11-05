@@ -29,8 +29,10 @@ docs/design.md        problem, use cases, architecture, algorithm background
 docs/data-sources.md  every feed/API we plan to use, with status and caveats
 docs/decisions.md     decision log (ADR-style) — why things are the way they are
 deploy/motis/         config.yml + fetch-data.sh to self-host MOTIS
-tools/                data preprocessing (OSM cleaner)
-src/                  Rust orchestration layer: MOTIS client, last-mile rules, overshoot/delay
+tools/                data preprocessing (OSM cleaner, Hoppy GBFS generator)
+src/                  Rust orchestration layer: MOTIS client, planner, last-mile rules,
+                      overshoot/delay, web server (server.rs)
+web/                  web UI: lane timetable + route detail + map (vanilla JS, no build step)
 tests/                end-to-end tests against a running MOTIS
 ```
 
@@ -48,10 +50,30 @@ overstap plan 51.1069,3.9859 51.02566,4.50349 --at "2026-10-30 08:00" --carry fo
 # Use cases 2/3: on a train, missed the stop or delayed → where to get off?
 overstap overshot <dest> --trip <tripId> --now "2026-10-30 08:42" [--folding] [--delay 15]
 
+# Web UI + JSON API on http://127.0.0.1:8737 (serves ./web)
+overstap serve [--listen 0.0.0.0:8737] [--web path/to/web]
+
 cargo test   # unit tests + end-to-end tests (skipped when MOTIS is down)
 ```
+
+## Web UI
+
+`overstap serve` serves the lane timetable from the earlier bike-transit app, now fed by
+overstap instead of Citymapper. One column (phone) or row (desktop) per option, drawn to
+scale in time, packed into lanes like a calendar; tap one for the stop-by-stop detail and
+the map. Tabs: **Folding bike** (own bike on both ends and on board, timed at 18 km/h;
+trains you'd only catch at 25 km/h are marked with that speed), **Shared bikes**
+(Blue-bike round trips, Donkey via hub, Hoppy, Velo… with their parking rules), **On foot**.
+Live delays, cancellations and tracks refresh every minute. Saved routes and recent
+places stay in the browser.
+
+API (all JSON; legs are MOTIS itineraries passed through, plus `label`/`notes` where
+overstap changed them): `GET /api/journeys?start=lat,lng&end=lat,lng&mode=folding|shared|foot&time=RFC3339&arrive=1`,
+`POST /api/live {"trips":[tripId…]}`, `GET /api/search?q=&near=`, `GET /api/reverse?lat=&lng=`,
+`GET /api/config`, `GET /healthz`. See `src/server.rs`.
 
 ## Status
 
 MOTIS runs with real Belgian data; all three use cases work end to end
-(`docs/results-2026-10-29.md`). Next steps are in `TODO.md`.
+(`docs/results-2026-10-29.md`). A first web UI (lane timetable) runs on top
+(`docs/results-2026-11-05.md`). Next steps are in `TODO.md`.

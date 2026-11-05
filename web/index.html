@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>overstap</title>
+  <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111315" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2316a34a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='18.5' cy='17.5' r='3.5'/%3E%3Ccircle cx='5.5' cy='17.5' r='3.5'/%3E%3Cpath d='M12 17.5V14l-3-3 4-3 2 3h2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body data-mode="idle" data-stage="map">
+  <div class="app">
+    <header class="top" id="top">
+      <div class="planwrap">
+        <button type="button" class="summary" id="summary"></button>
+        <form class="plan" id="plan" autocomplete="off" onsubmit="return false">
+          <div class="endpoints">
+            <div class="field" data-role="from">
+              <span class="dot dot-from" aria-hidden="true"></span>
+              <input id="from" type="text" placeholder="From" aria-label="From" spellcheck="false">
+              <button type="button" class="icon-btn locate" title="Use my location" aria-label="Use my location"></button>
+              <ul class="suggest" role="listbox" hidden></ul>
+            </div>
+            <button type="button" class="icon-btn swap" id="swap" title="Swap start and destination" aria-label="Swap start and destination"></button>
+            <div class="field" data-role="to">
+              <span class="dot dot-to" aria-hidden="true"></span>
+              <input id="to" type="text" placeholder="To" aria-label="To" spellcheck="false">
+              <ul class="suggest" role="listbox" hidden></ul>
+            </div>
+          </div>
+          <div class="when">
+            <select id="time-mode" aria-label="When">
+              <option value="now">Leave now</option>
+              <option value="depart">Depart at</option>
+              <option value="arrive">Arrive by</option>
+            </select>
+            <input id="time" type="datetime-local" aria-label="Date and time" hidden>
+            <button type="button" class="done" id="done">Done</button>
+          </div>
+        </form>
+      </div>
+      <nav class="tabs seg" id="tabs" aria-label="How you travel"></nav>
+      <div class="saved" id="saved"></div>
+      <div class="saved-menu" id="savedMenu" hidden></div>
+      <div class="viewbar">
+        <button type="button" class="show-all" data-action="toggle-all" aria-pressed="false" hidden></button>
+        <button type="button" class="icon-btn refresh" data-action="retry" title="Refresh" aria-label="Refresh"></button>
+        <div class="zoom" role="group" aria-label="Zoom timetable">
+          <button type="button" class="icon-btn" data-zoom="-1" title="Zoom out" aria-label="Zoom out">−</button>
+          <button type="button" class="icon-btn" data-zoom="1" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div id="notice"></div>
+    </header>
+    <main class="stage">
+      <div id="schedule" class="schedule" aria-label="Timetable of routes"></div>
+      <div id="map"></div>
+      <aside id="detail" class="detail" aria-label="Route details"></aside>
+      <div id="intro" class="intro"></div>
+      <button type="button" class="hdr-pill" id="pill" aria-label="Show search"></button>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

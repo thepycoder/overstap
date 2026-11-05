@@ -141,3 +141,53 @@ reads it from a local directory (a non-HTTP `url` in `config.yml`).
   legs come out ~25 % slower than reality — conservative.
 - Hubs missing from the Hoppinpunt data (17 of 95 in Kempen) are invisible.
 - Replace with a real feed as soon as Hoppy or IOK publishes one.
+
+---
+
+## ADR-012 — First web UI: port the bike-transit lane timetable; API passes MOTIS itineraries through
+*2026-11-05 · accepted*
+
+**Context.** The user's earlier app (bike-transit, Citymapper-based) has a lane
+timetable they like: every option drawn to scale in time, packed into lanes like a
+calendar, horizontal on desktop and vertical on a phone, with a stop-by-stop detail
+and map. They asked to build overstap's first UI on those lane-timeline screens
+rather than the space-time charts (ui-concepts rounds 1–4).
+
+**Decision.**
+- Copy its static frontend (`web/`, vanilla JS + Leaflet, no build step) and replace
+  only the data layer: Citymapper normalisation → `normLeg()` over MOTIS legs; three
+  tabs (folding / shared / foot) instead of Mixed / Classic; live refresh via MOTIS
+  trips instead of Citymapper journey times and station boards; no sweep of several
+  requests, since one MOTIS search covers a whole window.
+- `overstap serve` (`src/server.rs`): tiny_http + blocking reqwest, a few threads. The
+  API returns MOTIS-shaped itineraries (the `motis.rs` structs, serialised camelCase)
+  plus `label`/`notes` where overstap changed them, so there is one adapter, in the
+  browser. Synthetic legs (hub drop-off, Blue-bike tour) are built as MOTIS legs with
+  geometry from MOTIS street routes.
+- Everything the UI shows is computed per request; nothing is stored server-side.
+
+**Consequences.**
+- Fields the UI reads must exist in `motis.rs` (unknown MOTIS fields are dropped).
+- Payloads are 50–150 KB per search (leg shapes); fine for one rider.
+- The shared-bike tab costs 2 plans + up to ~30 street routes (cached per request):
+  ~5 s. Parallelise if it annoys.
+- The space-time chart can later be another view over the same `/api/journeys` data.
+
+---
+
+## ADR-013 — Own-bike speed is a MOTIS query parameter; rentals are re-timed in the UI
+*2026-11-05 · accepted*
+
+**Context.** MOTIS rides bikes at ~15 km/h; the rider does ~18 on the folding bike,
+faster when it matters. bike-transit handled this by re-timing rides in the browser
+and asking Citymapper a second time from earlier.
+
+**Decision.** `/api/v6/plan` accepts `cyclingSpeed` (m/s). The folding tab asks
+MOTIS at 18 km/h and again at 25 km/h with the window moved by what the faster ride
+saves; the UI times your own rides at 18 and marks options that need more (up to 25)
+with that speed. Rental e-bikes (Hoppy) are re-timed at 20 km/h in the UI only;
+human-powered rentals keep MOTIS's time.
+
+**Consequences.** E-bike options that only work at 20 km/h (e.g. Hoppy Retie → Mol for
+IC 20:58) are still missed, because MOTIS searches rentals at 15 km/h. Fix: a second
+shared search with `cyclingSpeed` for e-bike providers, if MOTIS applies it to rentals.
