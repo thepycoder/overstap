@@ -475,20 +475,28 @@ async function loadMore(dir) {
   render();
 }
 
-// Routes that another route clearly beats: it leaves no earlier, arrives no later, changes no
-// more often, and either changes less (the same train reached by bike instead of an extra hop)
-// or saves at least BEAT_MARGIN minutes in total. A couple of minutes isn't a real difference,
-// so near-equal alternatives both stay. Cancelled routes, broken connections and routes you'd
-// have to ride faster for never beat anything, and saved routes are never counted as beaten.
+// Routes that another route clearly beats: it leaves at most BEAT_MARGIN minutes earlier,
+// arrives no later, and saves enough time in total: at least BEAT_MARGIN minutes, plus
+// CHANGE_WORTH for every change it has more. With fewer changes it only has to leave no
+// earlier (the same train reached by bike instead of an extra hop). So near-equal alternatives both stay, but a
+// route with one change less that arrives two hours later doesn't. Cancelled routes, broken
+// connections and routes you'd have to ride faster for never beat anything, and saved routes
+// are never counted as beaten.
 const BEAT_MARGIN = 5;
+const CHANGE_WORTH = 15;
 
 function beatenJourneys() {
   const all = state.journeys;
   const saved = new Set(savedEntries().map(s => s.id));
   const t = d => Math.round(+d / MIN);
-  const beats = (a, b) => !a.cancelled && !a.atRisk && !a.fastKmh
-    && t(a.start) >= t(b.start) && t(a.end) <= t(b.end) && a.changes <= b.changes
-    && (a.changes < b.changes || (t(a.start) - t(b.start)) + (t(b.end) - t(a.end)) >= BEAT_MARGIN);
+  const beats = (a, b) => {
+    if (a.cancelled || a.atRisk || a.fastKmh) return false;
+    if (t(a.start) < t(b.start) - BEAT_MARGIN || t(a.end) > t(b.end)) return false;
+    const saving = (t(a.start) - t(b.start)) + (t(b.end) - t(a.end));
+    const extra = a.changes - b.changes;
+    if (extra < 0) return t(a.start) >= t(b.start);
+    return saving >= BEAT_MARGIN + CHANGE_WORTH * extra;
+  };
   return new Set(all.filter(b => !saved.has(b.key) && all.some(a => a !== b && beats(a, b))));
 }
 
@@ -1007,8 +1015,8 @@ function renderViewbar() {
   toggle.setAttribute('aria-pressed', String(state.showAll));
   toggle.textContent = state.showAll ? `Hide ${hidden} slower` : `+${hidden} slower`;
   toggle.title = state.showAll
-    ? 'Hide routes that another route beats: leaving no earlier, arriving no later, with no more changes'
-    : `${hidden} route${hidden > 1 ? 's are' : ' is'} hidden because another route leaves no earlier, arrives no later and has no more changes`;
+    ? 'Hide routes that another route beats: leaving about as late or later and arriving clearly earlier (an extra change counts as 15 min)'
+    : `${hidden} route${hidden > 1 ? 's are' : ' is'} hidden because another route leaves about as late or later and arrives clearly earlier (an extra change counts as 15 min)`;
 }
 
 function renderNotice() {
