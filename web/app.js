@@ -187,7 +187,11 @@ function normLeg(l) {
       trainNo: vehicle === 'train' ? l.tripShortName : null,
       tripId: l.tripId,
       bikesAllowed: l.bikesAllowed,
-      stops: places.map(p => ({ id: p.stopId, name: p.name, coords: [p.lat, p.lon], sched: toDate(p.scheduledDeparture || p.scheduledArrival) })),
+      // sched: the timetable time a stop is matched by. arr/dep: live times at that stop.
+      stops: places.map(p => ({
+        id: p.stopId, name: p.name, coords: [p.lat, p.lon], sched: toDate(p.scheduledDeparture || p.scheduledArrival),
+        schedArr: toDate(p.scheduledArrival), arr: l.realTime ? toDate(p.arrival) : null, dep: l.realTime ? toDate(p.departure) : null,
+      })),
     };
     leg.live = liveOf(l.from, l.to, l.realTime, l.cancelled);
     return leg;
@@ -251,6 +255,8 @@ function normJourney(raw, win = null, ownBike = false) {
     raw, legs,
     label: raw.label || null,
     notes: raw.notes || [],
+    // Only works if a late ride makes up time: { at, shortS } (ADR-026).
+    catchUp: raw.catchUp || null,
     bikeMeters: sum(legs.filter(l => l.kind === 'bike').map(l => l.distance)),
     walkMin: Math.round(sum(legs.filter(l => l.kind === 'walk').map(l => l.dur)) / 60),
     rentals: legs.filter(l => l.rental),
@@ -553,6 +559,13 @@ function applyTrip(l, trip) {
   const k = places.findIndex((p, n) => n > i && p.stopId === alight.id);
   if (k === -1) return false;
   l.live = liveOf(places[i], places[k], trip.realTime, trip.cancelled);
+  // Each stop's own live times: delays change along the way (late trains make up time).
+  if (trip.realTime) {
+    for (const s of l.stops) {
+      const p = places.slice(i, k + 1).find(p => p.stopId === s.id);
+      if (p) { s.arr = toDate(p.arrival); s.dep = toDate(p.departure); }
+    }
+  }
   return true;
 }
 
@@ -1190,6 +1203,7 @@ function renderIntro() {
 // Short live status of a whole journey: cancelled, a broken connection, late, or on time.
 function statusHTML(j) {
   if (j.cancelled) return '<span class="st cancel">Cancelled</span>';
+  if (j.atRisk && j.catchUp) return `<span class="st late">If it makes up ${Math.ceil(j.catchUp.shortS / 60)} min</span>`;
   if (j.atRisk) return '<span class="st cancel">Connection at risk</span>';
   if (j.delay >= 1) return `<span class="st late">+${j.delay} min</span>`;
   if (j.transit.some(l => l.live?.isLive)) return '<span class="st ok">On time</span>';
@@ -1298,7 +1312,7 @@ function capStatus(j) {
   const bits = [];
   if (isSaved(j.key)) bits.push(`<span class="cap-saved" title="Saved">${icon('bookmark')}</span>`);
   if (j.cancelled) bits.push('<span class="cap-warn">✕ cancelled</span>');
-  else if (j.atRisk) bits.push('<span class="cap-warn">⚠ connection</span>');
+  else if (j.atRisk) bits.push(`<span class="cap-warn">⚠ ${j.catchUp ? `${Math.ceil(j.catchUp.shortS / 60)}′ short` : 'connection'}</span>`);
   return bits.join('');
 }
 
@@ -1496,14 +1510,21 @@ function trackHTML(l) {
 }
 
 // The body of one segment, between its start and end bubbles.
+// When a ride gets to an intermediate stop: its live arrival when known, else the timetable
+// moved by the ride's delay at its first stop.
+function stopTime(l, s) {
+  if (s.arr || s.dep) return s.arr || s.dep;
+  const t = s.schedArr || s.sched;
+  return t && new Date(+t + (l.schedDep && l.dep ? l.dep - l.schedDep : 0));
+}
+
 function legHTML(l, j) {
   let body;
   if (l.kind === 'transit') {
     const subs = [liveLabel(l), esc(l.route.agency || ''), l.trainNo && `train ${esc(l.trainNo)}`, j.ownBike && l.bikesAllowed === false && '<span class="st cancel">No bikes on board</span>'].filter(Boolean);
     const between = l.stops.slice(1, -1);
-    // Timetable times along the way, moved by the ride's current delay.
-    const shift = l.schedDep && l.dep ? l.dep - l.schedDep : 0;
-    const stopsList = between.map(s => `<li><time>${s.sched ? fmtTime(new Date(+s.sched + shift)) : ''}</time>${esc(s.name)}</li>`).join('');
+    // Arrival at each stop along the way, live per stop when known.
+    const stopsList = between.map(s => { const t = stopTime(l, s); return `<li><time>${t ? fmtTime(t) : ''}</time>${esc(s.name)}</li>`; }).join('');
     body = `<div class="tl-title">${icon(l.vehicle)} ${pill(l.route)} ${l.headsign ? `<span>towards ${esc(l.headsign)}</span>` : ''}</div>
       ${subs.length ? `<div class="tl-sub">${subs.join(' · ')}</div>` : ''}
       ${between.length
@@ -1541,7 +1562,8 @@ function gapHTML(prev, next, walkSec) {
   const height = Math.max(22, Math.min(120, 16 + Math.max(0, min) * 3));
   let label;
   if (next.atRisk) {
-    label = `<span class="warn">⚠ You get there at ${fmtTime(prev.arr)}, but the ${esc(next.route?.display_name || 'next ride')} leaves at ${fmtTime(next.dep)}</span>`;
+    const short = Math.ceil((+prev.arr + (walkSec || 0) * 1000 - next.dep) / MIN);
+    label = `<span class="warn">⚠ ${short} min short: you get there at ${fmtTime(prev.arr)}, the ${esc(next.route?.display_name || 'next ride')} leaves at ${fmtTime(next.dep)}${prev.kind === 'transit' ? `. Possible if the ${esc(prev.route?.display_name || 'train')} makes up time` : ''}</span>`;
   } else {
     const what = prev.kind === 'transit' && next.kind === 'transit' ? 'change'
       : next.kind === 'transit' ? 'to the platform'
@@ -2093,8 +2115,7 @@ function rideLegNowHTML(l, now) {
     }
     if (l.trainNo) bits.push(`Train ${esc(l.trainNo)}${l.route.agency ? ` · ${esc(l.route.agency)}` : ''}`);
     if (on) {
-      const shift = l.schedDep && l.dep ? l.dep - l.schedDep : 0;
-      const ahead = l.stops.slice(1, -1).filter(s => s.sched && +s.sched + shift > now);
+      const ahead = l.stops.slice(1, -1).filter(s => +stopTime(l, s) > now);
       bits.push(ahead.length ? `Next stop ${esc(ahead[0].name)} · ${ahead.length} stop${ahead.length > 1 ? 's' : ''} before yours` : 'Your stop is next');
     }
   }
@@ -2163,7 +2184,7 @@ function changeCardHTML(ch, k, fb) {
   const spareW = (Math.max(ch.spare, 0) / scale) * 100;
   const l = ch.leg;
   const delay = l.delay >= 1 ? ` <em class="dly">+${l.delay}</em>` : '';
-  const spareTxt = l.cancelled ? 'cancelled' : ch.spare < 0 ? `${mins(-ch.spare)} short` : `${mins(ch.spare)} spare`;
+  const spareTxt = l.cancelled ? 'cancelled' : ch.spare < 0 ? `${mins(-ch.spare)} short · in by ${fmtTime(changeCutoff(ch))}` : `${mins(ch.spare)} spare`;
   let plan;
   if (fb === undefined) plan = '<span class="muted">Looking for a plan B…</span>';
   else if (!fb) plan = '<span class="muted">No other way on from here tonight</span>';
@@ -2188,10 +2209,19 @@ function pickupCardHTML(j, k, info) {
     ${rule ? `<div class="r-card-foot muted">${rule}</div>` : ''}</div>`;
 }
 
-// If a change ahead can't be made any more, you'll arrive with its plan B (when known).
-function lostChange(m, ex) {
+// The last moment you can be at a change's stop and still make it (live departure minus walk).
+const changeCutoff = ch => new Date(+ch.leg.dep - ch.walk * 1000);
+
+// The first change ahead that live times say you'll miss, with its plan B (when known). It's
+// only sure once the next ride is cancelled or the cutoff has passed: until then a late train
+// often makes up time, and plan B starts at that stop anyway (or stays on), so you decide
+// there (ADR-026).
+function lostChange(m, ex, now = Date.now()) {
   const k = m.changes.findIndex(ch => ch.spare < 0 || ch.leg.cancelled);
-  return k < 0 ? null : { k, ch: m.changes[k], fb: ex?.fallbacks[k] || null };
+  if (k < 0) return null;
+  const ch = m.changes[k];
+  const cutoff = changeCutoff(ch);
+  return { k, ch, fb: ex?.fallbacks[k] || null, cutoff, sure: !!ch.leg.cancelled || now >= +cutoff };
 }
 
 function renderRide(j) {
@@ -2204,9 +2234,9 @@ function renderRide(j) {
     : now < +j.start ? 'Before you leave'
     : curLeg.kind === 'transit' ? (now >= +curLeg.dep ? `On the ${legLabel(curLeg)}` : `At ${names[m.cur].from}`)
     : curLeg.kind === 'walk' ? 'Walking' : curLeg.rental ? `On a ${legLabel(curLeg)}` : 'Riding';
-  const lost = lostChange(m, ex);
-  const arrive = lost?.fb
-    ? `<s>${fmtTime(j.end)}</s> <b class="dly">${fmtTime(lost.fb.end)}</b>`
+  const lost = lostChange(m, ex, now);
+  const arrive = lost?.fb && lost.sure ? `<s>${fmtTime(j.end)}</s> <b class="dly">${fmtTime(lost.fb.end)}</b>`
+    : lost?.fb ? `<b class="tight">${fmtTime(j.end)}</b> or <b class="dly">${fmtTime(lost.fb.end)}</b>`
     : `<b class="${j.delay >= 1 ? 'dly' : ''}">${fmtTime(j.end)}</b>`;
   const live = j.transit.some(l => l.live?.isLive);
   const notifyBtn = 'Notification' in window && Notification.permission === 'default'
@@ -2216,7 +2246,8 @@ function renderRide(j) {
     <div class="r-next">${countdownHTML(m.next.at, now)}<div><b>${esc(m.next.title)}</b>${m.next.sub ? `<small>${esc(m.next.sub)}</small>` : ''}</div>${rideTrackHTML(m.next)}</div>
     ${rideStripHTML(j, now)}
     ${rideState.change ? `<div class="r-alert">${esc(rideState.change)}</div>` : ''}
-    ${lost ? `<div class="r-alert bad"><b>${lost.ch.leg.cancelled ? `The ${esc(lost.ch.leg.route.display_name)} is cancelled` : `You'll miss the ${esc(lost.ch.leg.route.display_name)} at ${esc(lost.ch.place)}`}</b>
+    ${lost && !lost.sure ? riskAlertHTML(lost)
+      : lost ? `<div class="r-alert bad"><b>${lost.ch.leg.cancelled ? `The ${esc(lost.ch.leg.route.display_name)} is cancelled` : `You'll miss the ${esc(lost.ch.leg.route.display_name)} at ${esc(lost.ch.place)}`}</b>
       ${lost.fb ? `<button type="button" class="r-take" data-planb="${lost.k}">Take plan B: arrive ${fmtTime(lost.fb.end)}</button>` : ' Looking for plan B…'}</div>`
       : j.cancelled ? '<div class="r-alert bad">A ride on this route is cancelled. Replan from here.</div>' : ''}
     <div class="r-cards">${rideLegsHTML(j, m, now, ex)}</div>
@@ -2225,6 +2256,15 @@ function renderRide(j) {
 }
 
 // The three facts (plus "get off now"); a buzz when one changes.
+// A change you'll probably miss, but might still make: when to decide, and what then.
+function riskAlertHTML(lost) {
+  const { ch, fb, k } = lost;
+  const name = esc(ch.leg.route.display_name);
+  return `<div class="r-alert"><b>${mins(-ch.spare)} short for the ${name} at ${esc(ch.place)}</b> on live times.
+    Late trains often make up time: change if you're there by <b>${fmtTime(lost.cutoff)}</b>${fb ? `, else ${esc(planBWhat(ch, fb))} → arrive ${fmtTime(fb.end)}` : ''}.
+    ${fb ? `<button type="button" class="r-take" data-planb="${k}">Switch to plan B now</button>` : ' Looking for plan B…'}</div>`;
+}
+
 function maybeAlert(j, m, now, lost) {
   const ch = m.changes[0];
   const facts = {
@@ -2232,16 +2272,18 @@ function maybeAlert(j, m, now, lost) {
     action: m.next.title,
     track: m.next.track ? `${m.next.track.what} ${m.next.track.at}` : null,
     spare: ch ? Math.round(ch.spare / 60) : null,
-    arrive: Math.round((lost?.fb?.end || j.end) / MIN),
+    arrive: Math.round(((lost?.sure && lost.fb?.end) || j.end) / MIN),
     cancelled: j.cancelled,
-    lost: lost ? lost.ch.leg.tripId : null,
+    lost: lost?.sure ? lost.ch.leg.tripId : null,
+    risk: lost && !lost.sure ? lost.ch.leg.tripId : null,
   };
   const old = rideState.facts;
   rideState.facts = facts;
   if (m.next.getOff != null && m.next.at - now <= GET_OFF_WARN && !rideState.warned.has(`off${m.next.getOff}@${j.key}`)) {
     rideState.warned.add(`off${m.next.getOff}@${j.key}`);
     const planB = lost?.fb && lost.ch.a === m.next.getOff;
-    if (planB && staysOn(lost.ch, lost.fb)) notify(`Stay on at ${lost.ch.place}`, `Plan B: ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
+    if (planB && !lost.sure) notify(`At ${lost.ch.place}: change if you're in by ${fmtTime(lost.cutoff)}`, `Else ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
+    else if (planB && staysOn(lost.ch, lost.fb)) notify(`Stay on at ${lost.ch.place}`, `Plan B: ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
     else notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}${m.next.track ? `, ${m.next.track.what.toLowerCase()} ${m.next.track.at}` : ''}` : '');
   }
   if (!old || old.key !== facts.key) return;
@@ -2249,9 +2291,12 @@ function maybeAlert(j, m, now, lost) {
   if (facts.lost && facts.lost !== old.lost) {
     msgs.push(`You'll miss the ${lost.ch.leg.route.display_name} at ${lost.ch.place}`);
     if (lost.fb) msgs.push(`Plan B: ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
+  } else if (facts.risk && facts.risk !== old.risk) {
+    msgs.push(`${mins(-lost.ch.spare)} short at ${lost.ch.place}: change if you're in by ${fmtTime(lost.cutoff)}`);
+    if (lost.fb) msgs.push(`Else ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
   } else if (facts.cancelled && !old.cancelled) msgs.push('A ride on your route is cancelled');
   if (Math.abs(facts.arrive - old.arrive) >= 2) msgs.push(`Arrival now ${fmtTime(new Date(facts.arrive * MIN))} (${facts.arrive > old.arrive ? '+' : ''}${facts.arrive - old.arrive}′)`);
-  if (!facts.lost && ch && old.spare != null && facts.spare !== old.spare && (Math.abs(facts.spare - old.spare) >= 3 || (facts.spare < 2) !== (old.spare < 2))) {
+  if (!facts.lost && !facts.risk && ch && old.spare != null && facts.spare !== old.spare && (Math.abs(facts.spare - old.spare) >= 3 || (facts.spare < 2) !== (old.spare < 2))) {
     msgs.push(`Spare at ${ch.place} ${old.spare}′ → ${facts.spare}′${facts.spare < 2 ? ': tight!' : ''}`);
   }
   if (facts.action !== old.action) msgs.unshift(`Next: ${facts.action}${facts.track ? `, ${facts.track.toLowerCase()}` : ''}`);

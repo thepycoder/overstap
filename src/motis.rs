@@ -38,6 +38,9 @@ pub struct PlanQuery {
     pub detailed_legs: bool,
     /// Average cycling speed in m/s (own bike and rentals); MOTIS default ≈ 4.2.
     pub cycling_speed: Option<f64>,
+    /// `REALTIME` (MOTIS default), `REALTIME_ANNOTATION_ONLY` (route on the timetable, report
+    /// live times) or `OFF`.
+    pub realtime_mode: Option<&'static str>,
     pub extra: Vec<(String, String)>,
 }
 
@@ -63,6 +66,7 @@ impl PlanQuery {
             use_routed_transfers: false,
             detailed_legs: false,
             cycling_speed: None,
+            realtime_mode: None,
             extra: vec![],
         }
     }
@@ -108,6 +112,9 @@ impl PlanQuery {
         }
         if let Some(v) = self.cycling_speed {
             p.push(("cyclingSpeed".into(), format!("{v:.2}")));
+        }
+        if let Some(m) = self.realtime_mode {
+            p.push(("realtimeMode".into(), m.into()));
         }
         if self.use_routed_transfers {
             p.push(("useRoutedTransfers".into(), "true".into()));

@@ -22,6 +22,11 @@ const UNLOCK_S: i64 = 60;
 /// A base search still "reaches" the destination when something leaves (or arrives) within
 /// the search window plus this. Later than that, MOTIS has searched on into the afternoon.
 const REACH_SLACK_MIN: i64 = 120;
+/// A route the timetable allows but live times break by at most this much is still shown,
+/// as one you might catch if the train makes up time (ADR-026).
+const CATCH_UP_MAX_MIN: i64 = 5;
+/// Live times only exist around now: no catch-up search for times further away.
+const CATCH_UP_HORIZON_MIN: i64 = 180;
 /// Shown when public transport runs but the destination point itself can't be reached
 /// after it (e.g. a map pin inside private grounds, ADR-021).
 pub const UNREACHABLE_WARNING: &str = "Hardly any route reaches this exact point after public transport, \
@@ -84,6 +89,8 @@ pub struct Request {
     pub fast_kmh: Option<f64>,
     /// Your own (non-folding) bike. No effect for `Folding`.
     pub bike: OwnBike,
+    /// Also look for routes that only work if a late ride makes up time (one more search).
+    pub catch_up: bool,
 }
 
 impl Request {
@@ -98,6 +105,7 @@ impl Request {
             max_bike_min: 45,
             min_transfer_min: None,
             ride_kmh: 18.0,
+            catch_up: true,
             fast_kmh: None,
             bike: OwnBike::None,
         }
@@ -111,8 +119,21 @@ pub struct Journey {
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// Set when a change only works if a late ride makes up time (live times say it's short).
+    #[serde(rename = "catchUp", skip_serializing_if = "Option::is_none")]
+    pub catch_up: Option<CatchUp>,
     #[serde(flatten)]
     pub it: Itinerary,
+}
+
+/// The tightest change of a catch-up route.
+#[derive(Debug, Clone, Serialize)]
+pub struct CatchUp {
+    /// Where you change.
+    pub at: String,
+    /// How much later than needed you'd get there on live times, in seconds.
+    #[serde(rename = "shortS")]
+    pub short_s: i64,
 }
 
 impl Journey {
@@ -120,6 +141,7 @@ impl Journey {
         Self {
             label: None,
             notes: vec![],
+            catch_up: None,
             it,
         }
     }
@@ -205,17 +227,7 @@ pub fn plan_full(c: &Client, r: &Request) -> Result<Planned> {
     // `base`: the tab's plain search, whose reach says whether the destination works.
     let (mut out, base) = match r.carry {
         Carry::Foot => {
-            let mut q = base_query(r);
-            // MOTIS defaults to 15 min; a 2 km walk from the station is normal.
-            q.max_pre_transit_s = Some(3600);
-            q.max_post_transit_s = Some(3600);
-            q.direct_modes = vec!["WALK".into()];
-            q.max_direct_s = Some(3600);
-            if bike_here(r) {
-                bike_first(&mut q, r);
-                q.cycling_speed = Some(r.ride_kmh / 3.6);
-            }
-            let p = c.plan(&q)?;
+            let p = c.plan(&foot_query(r))?;
             let base = p.itineraries.clone();
             let out = p
                 .itineraries
@@ -228,6 +240,9 @@ pub fn plan_full(c: &Client, r: &Request) -> Result<Planned> {
         Carry::Folding => folding(c, r)?,
         Carry::Shared => shared(c, r)?,
     };
+    if r.catch_up {
+        out.extend(catch_up(c, r));
+    }
     let mut warnings = vec![];
     if unreachable(c, r, &base)? {
         warnings.push(UNREACHABLE_WARNING.to_string());
@@ -292,24 +307,102 @@ fn unreachable(c: &Client, r: &Request, base: &[Itinerary]) -> Result<bool> {
     Ok(reaches(&c.plan(&q)?.itineraries, r))
 }
 
-fn folding(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
-    let query = |kmh: f64, lead: Duration| {
-        let mut q = base_query(r);
-        q.pre_transit_modes = vec!["BIKE".into()];
-        q.post_transit_modes = vec!["BIKE".into()];
-        q.max_pre_transit_s = Some(r.max_bike_min * 60);
-        q.max_post_transit_s = Some(r.max_bike_min * 60);
-        q.direct_modes = vec!["BIKE".into()];
-        q.max_direct_s = Some(3 * 3600);
-        q.require_bike_transport = true;
-        q.cycling_speed = Some(kmh / 3.6);
-        // Start the window earlier (later, arriving) by what riding faster saves.
-        q.time = r
-            .time
-            .map(|t| if r.arrive_by { t + lead } else { t - lead });
-        q.search_window_s += lead.num_seconds() as u32;
-        q
+/// The foot tab's search: walking (or your own bike, when it's with you) to and from transit.
+fn foot_query(r: &Request) -> PlanQuery {
+    let mut q = base_query(r);
+    // MOTIS defaults to 15 min; a 2 km walk from the station is normal.
+    q.max_pre_transit_s = Some(3600);
+    q.max_post_transit_s = Some(3600);
+    q.direct_modes = vec!["WALK".into()];
+    q.max_direct_s = Some(3600);
+    if bike_here(r) {
+        bike_first(&mut q, r);
+        q.cycling_speed = Some(r.ride_kmh / 3.6);
+    }
+    q
+}
+
+/// The folding tab's search at `kmh`, its window moved by `lead` (what riding faster saves).
+fn folding_query(r: &Request, kmh: f64, lead: Duration) -> PlanQuery {
+    let mut q = base_query(r);
+    q.pre_transit_modes = vec!["BIKE".into()];
+    q.post_transit_modes = vec!["BIKE".into()];
+    q.max_pre_transit_s = Some(r.max_bike_min * 60);
+    q.max_post_transit_s = Some(r.max_bike_min * 60);
+    q.direct_modes = vec!["BIKE".into()];
+    q.max_direct_s = Some(3 * 3600);
+    q.require_bike_transport = true;
+    q.cycling_speed = Some(kmh / 3.6);
+    // Start the window earlier (later, arriving) by what riding faster saves.
+    q.time = r
+        .time
+        .map(|t| if r.arrive_by { t + lead } else { t - lead });
+    q.search_window_s += lead.num_seconds() as u32;
+    q
+}
+
+/// The tightest change of `it` on live times, if it's short: arriving (plus the walk or
+/// transfer time MOTIS puts in between) after the next ride leaves.
+fn short_change(it: &Itinerary) -> Option<CatchUp> {
+    let rides: Vec<usize> = (0..it.legs.len())
+        .filter(|&k| it.legs[k].is_transit())
+        .collect();
+    rides
+        .windows(2)
+        .filter_map(|w| {
+            let (a, b) = (&it.legs[w[0]], &it.legs[w[1]]);
+            let walk: i64 = it.legs[w[0] + 1..w[1]].iter().map(|l| l.duration).sum();
+            let short = (a.end_time - b.start_time).num_seconds() + walk;
+            (short > 0).then(|| CatchUp {
+                at: a.to.name.clone(),
+                short_s: short,
+            })
+        })
+        .max_by_key(|c| c.short_s)
+}
+
+/// Routes the timetable allows but today's live times break by a few minutes: MOTIS's live
+/// search drops them, yet a late train often makes up time. Searched on the timetable
+/// (`REALTIME_ANNOTATION_ONLY`: live times still reported) and kept when the worst change is at
+/// most CATCH_UP_MAX_MIN short.
+fn catch_up(c: &Client, r: &Request) -> Vec<Journey> {
+    let t = r.time.unwrap_or_else(Utc::now);
+    if (t - Utc::now()).num_minutes().abs() > CATCH_UP_HORIZON_MIN {
+        return vec![];
+    }
+    let mut q = match r.carry {
+        Carry::Folding => folding_query(r, r.ride_kmh, Duration::zero()),
+        Carry::Foot | Carry::Shared => foot_query(r),
     };
+    q.realtime_mode = Some("REALTIME_ANNOTATION_ONLY");
+    let p = match c.plan(&q) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("  catch-up search: {e:#}");
+            return vec![];
+        }
+    };
+    p.itineraries
+        .into_iter()
+        .filter(|it| !it.legs.iter().any(|l| l.cancelled == Some(true)))
+        .filter_map(|it| {
+            let cu = short_change(&it)?;
+            (cu.short_s <= CATCH_UP_MAX_MIN * 60).then(|| Journey {
+                label: Some("If the train catches up".into()),
+                notes: vec![format!(
+                    "On live times you'd reach {} {} min too late to change. Late trains often make up a few minutes: decide there.",
+                    cu.at,
+                    (cu.short_s + 59) / 60
+                )],
+                catch_up: Some(cu),
+                it,
+            })
+        })
+        .collect()
+}
+
+fn folding(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
+    let query = |kmh: f64, lead: Duration| folding_query(r, kmh, lead);
     let p = c.plan(&query(r.ride_kmh, Duration::zero()))?;
     let base = p.itineraries.clone();
     let mut out: Vec<Journey> = p
@@ -380,6 +473,7 @@ fn parked(c: &Client, r: &Request, at: (f64, f64)) -> Result<Vec<Journey>> {
                 "Your bike is parked near {stop}: ride it the rest of the way ({} min).",
                 ride.duration / 60
             )],
+            catch_up: None,
             it: Itinerary::from_legs(legs),
         });
     }
@@ -438,6 +532,7 @@ fn shared(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
             Fix::Fixed(cand) => out.push(Journey {
                 label: Some(cand.label),
                 notes: cand.notes,
+                catch_up: None,
                 it: cand.it,
             }),
             Fix::Unusable(why) => eprintln!("  dropped: {why}"),
@@ -454,6 +549,7 @@ fn shared(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
             out.push(Journey {
                 label: Some(cand.label),
                 notes: cand.notes,
+                catch_up: None,
                 it: cand.it,
             });
         }
@@ -465,6 +561,39 @@ fn shared(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn timed(mode: &str, to: &str, start: &str, end: &str) -> crate::motis::Leg {
+        let t = |s: &str| format!("2026-11-10T{s}:00Z").parse().unwrap();
+        crate::motis::Leg {
+            mode: mode.into(),
+            to: crate::motis::Place {
+                name: to.into(),
+                ..Default::default()
+            },
+            start_time: t(start),
+            end_time: t(end),
+            duration: (t(end) - t(start)).num_seconds(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn short_change_measures_the_tightest_change() {
+        // L into Lier 16:39 (live), 4 min transfer, IC leaves 16:40: 3 min short.
+        let it = Itinerary::from_legs(vec![
+            timed("WALK", "Mol", "16:00", "16:04"),
+            timed("REGIONAL_RAIL", "Lier", "16:05", "16:39"),
+            timed("WALK", "Lier", "16:39", "16:43"),
+            timed("REGIONAL_RAIL", "Brussel-Noord", "16:40", "17:16"),
+            timed("WALK", "Home", "17:16", "17:20"),
+        ]);
+        let cu = short_change(&it).unwrap();
+        assert_eq!((cu.at.as_str(), cu.short_s), ("Lier", 180));
+        // Arriving 16:35 leaves a minute to spare: nothing to catch up.
+        let mut ok = it.clone();
+        ok.legs[1] = timed("REGIONAL_RAIL", "Lier", "16:05", "16:35");
+        assert!(short_change(&ok).is_none());
+    }
     use crate::motis::{Leg, Rental};
 
     fn leg(mode: &str, trip: Option<&str>) -> Leg {

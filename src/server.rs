@@ -6,7 +6,7 @@
 //! | `GET /api/search?q=&near=lat,lng` | place search (Citymapper, else MOTIS; `places.rs`) |
 //! | `GET /api/resolve?id=` | coordinates of a Citymapper search hit |
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
-//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there) |
+//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there); `catchUp` on routes that need a late train to make up time |
 //! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks — NMBS's from iRail —, cancellations) |
 //! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change (get off there, or stay on and change later), bikes at rental pickups |
 //! | `GET /healthz` | MOTIS reachable? |
@@ -375,6 +375,8 @@ fn plan_b_here(
     q.time = Some(ch.after + chrono::Duration::seconds(60));
     q.bike = bike;
     q.window_min = 90;
+    // Plan B should be a sure thing, not another route that needs the train to catch up.
+    q.catch_up = false;
     let js = planner::plan(c, &q)
         .map_err(|e| eprintln!("  ride: plan B from {}: {e:#}", ch.from))
         .ok()?;
@@ -430,6 +432,7 @@ fn plan_b_stay_on(
                     q.time = Some(*arr);
                     q.bike = bike;
                     q.window_min = 60;
+                    q.catch_up = false;
                     let js = planner::plan(c, &q)
                         .map_err(|e| eprintln!("  ride: plan B from {id}: {e:#}"))
                         .ok()?;
@@ -449,6 +452,7 @@ fn plan_b_stay_on(
                     Some(planner::Journey {
                         label: Some(format!("Stay on to {}", places[*b].name)),
                         notes: on.notes,
+                        catch_up: None,
                         it: crate::motis::Itinerary::from_legs(legs),
                     })
                 })
