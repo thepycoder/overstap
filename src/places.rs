@@ -20,6 +20,8 @@ const REGION: &str = "be-brussels";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
 const MIN_INTERVAL: Duration = Duration::from_millis(350);
 const MAX_RESULTS: usize = 8;
+/// Furthest a venue's street address may be from its pin to be used instead (ADR-021).
+const MAX_STREET_SNAP_M: f64 = 500.0;
 
 /// One place, in the shape the UI's autocomplete expects (bike-transit's).
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +34,9 @@ pub struct Place {
     pub coords: Option<[f64; 2]>,
     #[serde(rename = "type")]
     pub kind: Option<String>,
+    /// For a venue: the street address its coordinates were moved to (ADR-021).
+    #[serde(rename = "routedTo", skip_serializing_if = "Option::is_none")]
+    pub routed_to: Option<String>,
 }
 
 impl From<&GeocodeMatch> for Place {
@@ -42,6 +47,7 @@ impl From<&GeocodeMatch> for Place {
             address: m.town().map(str::to_string),
             coords: Some([m.lat, m.lon]),
             kind: Some(m.kind.clone()),
+            routed_to: None,
         }
     }
 }
@@ -66,7 +72,16 @@ impl Places {
     ) -> Result<Vec<Place>> {
         if let Some(cm) = &self.citymapper {
             match cm.search(text, near) {
-                Ok(hits) if !hits.is_empty() => return Ok(hits),
+                // A venue's pin can sit deep inside its grounds: leave its coordinates out so
+                // the UI resolves it, which moves it to the street address (ADR-021).
+                Ok(mut hits) if !hits.is_empty() => {
+                    for h in &mut hits {
+                        if is_venue(h) && h.address.as_deref().and_then(street_of).is_some() {
+                            h.coords = None;
+                        }
+                    }
+                    return Ok(hits);
+                }
                 Ok(_) => eprintln!("  search: Citymapper has nothing for '{text}', trying MOTIS"),
                 Err(e) => eprintln!("  search: Citymapper failed, using MOTIS: {e:#}"),
             }
@@ -78,12 +93,28 @@ impl Places {
             .collect())
     }
 
-    /// Coordinates for a Citymapper search hit (MOTIS hits always carry their own).
+    /// Coordinates for a Citymapper search hit (MOTIS hits always carry their own). A venue
+    /// goes to its street address when that's close: Google's venue pin can be inside private
+    /// grounds that MOTIS can't reach after public transport, the address is on the street
+    /// (ADR-021). Addresses and dropped pins stay where they are.
     pub fn resolve(&self, id: &str) -> Result<Place> {
         let Some(cm) = &self.citymapper else {
             anyhow::bail!("bad request: place ids need Citymapper, which is switched off")
         };
-        cm.resolve(id)
+        let mut p = cm.resolve(id)?;
+        if is_venue(&p) {
+            match cm.street_point(&p) {
+                Ok(Some((street, at))) => {
+                    p.coords = Some(at);
+                    p.routed_to = Some(street);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("  resolve: no street address for {id}, keeping its pin: {e:#}")
+                }
+            }
+        }
+        Ok(p)
     }
 
     /// A name for a dropped pin or the current location.
@@ -198,6 +229,29 @@ impl Citymapper {
             .with_context(|| format!("Citymapper has no coordinates for {id}"))
     }
 
+    /// Where a venue's street address is, if it has one with a house number near its pin.
+    fn street_point(&self, venue: &Place) -> Result<Option<(String, [f64; 2])>> {
+        let (Some(addr), Some(pin)) = (venue.address.as_deref(), venue.coords) else {
+            return Ok(None);
+        };
+        let Some(street) = street_of(addr) else {
+            return Ok(None);
+        };
+        let hits = self.search(addr, Some((pin[0], pin[1])))?;
+        let Some(hit) = match_street(&hits, street) else {
+            return Ok(None);
+        };
+        let at = match (hit.coords, hit.id.as_deref()) {
+            (Some(c), _) => c,
+            (None, Some(id)) => match self.resolve(id)?.coords {
+                Some(c) => c,
+                None => return Ok(None),
+            },
+            (None, None) => return Ok(None),
+        };
+        Ok((meters(pin, at) <= MAX_STREET_SNAP_M).then(|| (street.to_string(), at)))
+    }
+
     fn reverse(&self, lat: f64, lon: f64) -> Result<Option<Place>> {
         let req = self
             .http
@@ -209,6 +263,37 @@ impl Citymapper {
             lon,
         ))
     }
+}
+
+fn is_venue(p: &Place) -> bool {
+    p.kind.as_deref() == Some("place")
+}
+
+/// "Boeretang 200, 2400 Mol, Belgium" → "Boeretang 200": the street and house number, if
+/// the address starts with one ("2400 Mol, Belgium" and "Plattebeekstraat, …" don't).
+fn street_of(address: &str) -> Option<&str> {
+    let first = address.split(',').next()?.trim();
+    let mut words = first.split_whitespace();
+    let number = words.next_back()?;
+    (words.next().is_some() && number.starts_with(|c: char| c.is_ascii_digit())).then_some(first)
+}
+
+/// The address hit for exactly this street and number.
+fn match_street<'a>(hits: &'a [Place], street: &str) -> Option<&'a Place> {
+    let norm = |s: &str| {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+    hits.iter()
+        .find(|h| h.kind.as_deref() == Some("address") && norm(&h.name) == norm(street))
+}
+
+fn meters(a: [f64; 2], b: [f64; 2]) -> f64 {
+    let dx = (a[1] - b[1]).to_radians() * a[0].to_radians().cos();
+    let dy = (a[0] - b[0]).to_radians();
+    6_371_000.0 * (dx * dx + dy * dy).sqrt()
 }
 
 fn str_of(v: &Value, key: &str) -> Option<String> {
@@ -242,6 +327,7 @@ fn parse_search(v: &Value) -> Vec<Place> {
                 address: str_of(r, "address"),
                 coords: coords_of(r),
                 kind: str_of(r, "type"),
+                routed_to: None,
             })
         })
         .take(MAX_RESULTS)
@@ -256,6 +342,7 @@ fn parse_resolve(v: &Value) -> Option<Place> {
         address: str_of(p, "address"),
         coords: Some(coords_of(p)?),
         kind: str_of(p, "type"),
+        routed_to: None,
     })
 }
 
@@ -295,6 +382,7 @@ fn parse_reverse(v: &Value, lat: f64, lon: f64) -> Option<Place> {
         address: parts.get("locality").map(|s| s.to_string()),
         coords: Some([lat, lon]),
         kind: None,
+        routed_to: None,
     })
 }
 
@@ -334,6 +422,39 @@ mod tests {
             Some([51.027481, 4.498251])
         );
         assert!(parse_resolve(&json!({"place_result": {"name": "x"}})).is_none());
+    }
+
+    #[test]
+    fn venues_use_their_street_address() {
+        assert_eq!(
+            street_of("Boeretang 200, 2400 Mol, Belgium"),
+            Some("Boeretang 200")
+        );
+        assert_eq!(
+            street_of("Rue de la Loi 16A, 1000 Bruxelles"),
+            Some("Rue de la Loi 16A")
+        );
+        assert_eq!(street_of("2400 Mol, Belgium"), None);
+        assert_eq!(street_of("Plattebeekstraat, Mechelen, Belgium"), None);
+        assert_eq!(street_of("200"), None);
+        // What Citymapper returns for the address of VITO's pin (2026-11-10).
+        let v: Value = serde_json::from_str(
+            r#"{"results":[
+              {"id":"google:ChIJD47WNkM1wUcRjNc15e4Q5B0","name":"Boeretang 200",
+               "address":"2400 Mol, Belgium","type":"address"},
+              {"id":"google:x","name":"Boeretang 200","address":"Mol","type":"place"}]}"#,
+        )
+        .unwrap();
+        let hits = parse_search(&v);
+        let hit = match_street(&hits, "boeretang  200").unwrap();
+        assert_eq!(
+            hit.id.as_deref(),
+            Some("google:ChIJD47WNkM1wUcRjNc15e4Q5B0")
+        );
+        assert!(match_street(&hits, "Boeretang 2").is_none());
+        // The pin and the address point: ~200 m apart.
+        let d = meters([51.218673, 5.090817], [51.219023, 5.093538]);
+        assert!((150.0..250.0).contains(&d), "{d}");
     }
 
     #[test]

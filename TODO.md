@@ -39,7 +39,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [x] Use case 1: hub-only correction (Donkey) + round-trip tour pricing (Blue-bike)
 - [x] End-to-end tests (`tests/use_cases.rs`, skip when MOTIS is down)
 - [ ] Look up the current trip by "I'm on the 08:09 to Mol" instead of a raw tripId
-- [~] Geocode venues to entrances (Nekkerhal centroid snapped wrong): web UI uses Citymapper/Google place search (ADR-017) → Plattebeekstraat 1; CLI free text still MOTIS
+- [~] Geocode venues to entrances (Nekkerhal centroid snapped wrong): web UI uses Citymapper/Google place search (ADR-017) → Plattebeekstraat 1; CLI free text still MOTIS; venues now route to their street address (ADR-021)
+- [ ] Real entrances for large sites: OSM `entrance=*` / gates on the site boundary, picked by direction of arrival
+- [ ] Blue-bike legs with `returnConstraint: NONE` from MOTIS (Geel Muziekacademie): check the De Lijn GBFS feed; price them as tours if they're really round-trip
 - [~] Better geocoding ("'t Veld, Retie" not found): Citymapper finds "'t Veldt" (ADR-017); CLI free text still MOTIS
 - [ ] Measure MOTIS RAM on the NAS with `geocoding`/`reverse_geocoding` off; drop the MOTIS geocoder only if it's worth losing the fallback (ADR-017)
 - [ ] Present walk-vs-wait trade-offs (long walk vs late bus) instead of a hard walk cap

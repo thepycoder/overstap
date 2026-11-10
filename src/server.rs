@@ -280,8 +280,8 @@ fn journeys(c: &Client, q: &HashMap<String, String>) -> Result<Value> {
     r.ride_kmh = num(q, "kmh")?.unwrap_or(18.0_f64).clamp(8.0, 40.0);
     r.fast_kmh = num::<f64>(q, "fast")?.map(|v| v.clamp(8.0, 45.0));
     r.bike = own_bike(q.get("bike"))?;
-    let js = planner::plan(c, &r)?;
-    Ok(json!({ "journeys": js }))
+    let p = planner::plan_full(c, &r)?;
+    Ok(json!({ "journeys": p.journeys, "warnings": p.warnings }))
 }
 
 fn own_bike(v: Option<&String>) -> Result<OwnBike> {
