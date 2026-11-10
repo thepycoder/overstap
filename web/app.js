@@ -45,7 +45,9 @@ const RIDE_KMH = 18;
 const FAST_KMH = 25;
 const EBIKE_KMH = 20;
 // Longest ride before and after transit, per tab (minutes at MOTIS's speed for rentals).
-const MAX_BIKE_MIN = { folding: 45, shared: 60 };
+// These are the defaults; the "Bike ≤" menu changes them per tab (state.maxBike).
+const MAX_BIKE_MIN = { folding: 45, shared: 60, foot: 45 };
+const MAX_BIKE_CHOICES = [10, 15, 20, 30, 45, 60, 90];
 const WINDOW_MIN = 60;
 // Line colours for shared-bike operators (by GBFS provider id prefix).
 const PROVIDER_COLORS = [['blue-bike', '#1b7fd1'], ['donkey', '#f0642a'], ['velo', '#d71920'], ['hoppy', '#6aa82c'], ['dott', '#1aa0d8']];
@@ -77,6 +79,9 @@ const state = {
   // the folding bike is with you anyway. Kept in the browser: it's where the bike really is.
   bike: 'none',
   bikeAt: null,
+  // Longest bike ride per tab, in minutes, where you changed it from MAX_BIKE_MIN. Kept in
+  // the browser like the bike: it's how far you're willing to ride, not part of a route.
+  maxBike: {},
   journeys: [],
   byKey: new Map(),
   paging: { later: 'idle', earlier: 'off' },
@@ -373,12 +378,16 @@ function defaultTimeValue() {
   return isoFromDate(d).slice(0, 16);
 }
 
+const maxBikeMin = (tab = state.tab) => state.maxBike[tab] || MAX_BIKE_MIN[tab];
+// The menu matters wherever a bike can be in the plan: not on foot without your own bike.
+const maxBikeApplies = () => state.tab !== 'foot' || !!bikeParam();
+
 const targetTime = () => (state.timeMode === 'now' || !state.time ? null : new Date(state.time));
 
 // One overstap search. `time` is when to leave (or arrive, with ARRIVE_BY); none means now.
 function fetchJourneys(timeMode, time, win = null) {
   const tab = state.tab;
-  const params = { start: ll(state.from.coords), end: ll(state.to.coords), mode: tab, window: WINDOW_MIN, maxbike: MAX_BIKE_MIN[tab] };
+  const params = { start: ll(state.from.coords), end: ll(state.to.coords), mode: tab, window: WINDOW_MIN, maxbike: maxBikeMin(tab) };
   if (tab === 'folding') Object.assign(params, { kmh: RIDE_KMH, fast: FAST_KMH });
   const bike = bikeParam();
   if (bike) Object.assign(params, { bike, kmh: RIDE_KMH });
@@ -983,7 +992,8 @@ function setHeader(visible) {
 function renderSummary() {
   if (!state.from || !state.to) return;
   const when = (state.timeMode === 'now' ? 'Leave now' : `${state.timeMode === 'arrive' ? 'Arrive by' : 'Depart'} ${fmtTime(targetTime())}`)
-    + ({ here: ' · your bike', parked: ` · bike at ${state.bikeAt?.name}` }[bikeParam() && state.bike] || '');
+    + ({ here: ' · your bike', parked: ` · bike at ${state.bikeAt?.name}` }[bikeParam() && state.bike] || '')
+    + (maxBikeApplies() && state.maxBike[state.tab] ? ` · bike ≤ ${maxBikeMin()} min` : '');
   const html = `<span class="sum-route"><b>${esc(state.from.name)}</b> → <b>${esc(state.to.name)}</b></span><span class="sum-when">${esc(when)}</span>`;
   $('#summary').innerHTML = html;
   $('#pill').innerHTML = `${icon('pin')}${html}`;
@@ -1007,11 +1017,17 @@ function setBike(mode, at = state.bikeAt) {
 function renderTabs() {
   $('#tabs').innerHTML = TABS.map(t =>
     `<button type="button" data-tab="${t.id}" aria-pressed="${t.id === state.tab}" title="${esc(t.title)}">${icon(t.icon)} ${t.name}</button>`).join('');
+  // On a narrow phone the tabs scroll sideways: keep the chosen one in view.
+  const on = $('#tabs [aria-pressed="true"]');
+  if (on && $('#tabs').scrollWidth > $('#tabs').clientWidth) $('#tabs').scrollLeft = on.offsetLeft - $('#tabs').offsetLeft - 4;
   const sel = $('#bike-mode');
   sel.hidden = state.tab === 'folding';
   sel.value = state.bike;
   sel.querySelector('[value="parked"]').textContent = state.bikeAt ? `My bike: at ${state.bikeAt.name}` : 'My bike: parked…';
   $('#bikeat').hidden = sel.hidden || state.bike !== 'parked';
+  const max = $('#max-bike');
+  max.hidden = !maxBikeApplies();
+  max.value = String(maxBikeMin());
 }
 
 function renderViewbar() {
@@ -2267,6 +2283,18 @@ $('#bike-mode').addEventListener('change', e => {
   setBike(e.target.value);
   state.savedId = null;
   if (state.bike === 'parked' && !state.bikeAt) { renderTabs(); $('#bikeAt').focus(); return; }
+  plan();
+});
+
+{
+  const m = store.get('maxBike', {});
+  for (const t of TABS) if (MAX_BIKE_CHOICES.includes(m?.[t.id])) state.maxBike[t.id] = m[t.id];
+}
+$('#max-bike').addEventListener('change', e => {
+  const v = +e.target.value;
+  if (v === MAX_BIKE_MIN[state.tab]) delete state.maxBike[state.tab]; else state.maxBike[state.tab] = v;
+  store.set('maxBike', state.maxBike);
+  state.savedId = null;
   plan();
 });
 
