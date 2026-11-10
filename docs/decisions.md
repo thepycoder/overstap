@@ -354,3 +354,39 @@ the same S34, and on the Shared tab the last-mile choice (Blue-bike / Donkey / w
 They do not give the ride-to-Geel/Herentals ladder or the bus-vs-bike-to-Mol choice from
 the mockup: that needs the backend step (`/api/variants`, per-leg alternatives), which can
 feed the same view later. Loading earlier or later routes in the timetable adds variants.
+
+---
+
+## ADR-021 — Venues route to their street address; warn when a point can't be reached
+*2026-11-10 · accepted*
+
+**Context.** "vito, mol" in the place search gives Google's VITO pin (51.21867, 5.09082),
+~200 m inside the site; "Boeretang 200" gives the address point on the street. Both are
+labelled "Boeretang 200, 2400 Mol". For the pin, MOTIS finds no bike leg after transit
+(Folding: 0 routes) and walking only via a 44' detour, so the Shared tab lost every Mol
+Blue-bike tour (they're built on the walking plans) and showed only Geel. Direct street
+routing to the pin works, so it fails silently. Likely cause: private/no-bike ways on the
+site (not confirmed: OSM wasn't reachable from the workspace). See results-2026-11-10-destinations.md.
+
+**Options.** (1) Route venues to their street address. (2) On failure, snap to the nearest
+public road. Rejected 2: the nearest road is a geometric point with no meaning (it can be
+behind a fence), presented as if it were the way in. The address is curated and usually on
+the frontage of the main entrance, though not guaranteed (rooftop-precision address points
+can be inside grounds too).
+
+**Decision.**
+- Venue hits (`type: place`) whose address starts with street + number: `/api/search` leaves
+  their coordinates out so the UI resolves them, and `/api/resolve` moves them to the address
+  hit for exactly that street and number, if within 500 m. Name kept; `routedTo` tells the UI,
+  which says so while it's the search's endpoint. Addresses and dropped pins are never moved.
+- `/api/journeys` returns `warnings`. The planner warns when the tab's base search
+  (walking plans for Shared) has nothing within the window + 2 h, *and* a control search to the
+  stop those routes end at does: transit runs, the last stretch to the point fails. Without the
+  control, a night search looks the same.
+- Blue-bike tours: a station's current bike count only rules it out for trips within the hour
+  (an evening search found Mol empty for the next morning).
+
+**Consequences.** Two extra cached place lookups per venue pick; one or two extra MOTIS calls
+only when a search looks unreachable. Places already in a browser's recent list keep their old
+coordinates until picked again from search. Real gates (OSM `entrance=*`, gates on the site
+boundary) remain the proper fix for sites with several entrances.

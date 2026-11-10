@@ -192,6 +192,8 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 #notice:empty { display: none; }
 #notice { padding-top: 10px; }
 .notice { border-radius: 12px; padding: 9px 12px; background: var(--panel-2); color: var(--muted); font-size: 14px; }
+.notice + .notice { margin-top: 6px; }
+.notice.warn { color: var(--ink); background: color-mix(in srgb, var(--warn, #d98a00) 14%, var(--panel)); }
 .notice.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 9%, var(--panel)); }
 .notice button { margin-left: 6px; border: 0; background: transparent; text-decoration: underline; color: inherit; padding: 0; }
 

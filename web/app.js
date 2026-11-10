@@ -79,6 +79,8 @@ const state = {
   bikeAt: null,
   journeys: [],
   byKey: new Map(),
+  // The server's warnings about this search itself (e.g. a destination it can't reach).
+  warnings: [],
   paging: { later: 'idle', earlier: 'off' },
   status: 'idle',
   error: null,
@@ -386,7 +388,11 @@ function fetchJourneys(timeMode, time, win = null) {
   if (timeMode === 'ARRIVE_BY') params.arrive = 1;
   const from = slim(state.from);
   const to = slim(state.to);
-  return api('/api/journeys', params).then(d => normalize(d, win, tab).map(j => Object.assign(j, { from, to, tab, bike })));
+  return api('/api/journeys', params).then(d => {
+    const js = normalize(d, win, tab).map(j => Object.assign(j, { from, to, tab, bike }));
+    js.warnings = d.warnings || [];
+    return js;
+  });
 }
 
 // Adds a page of results; returns the journeys it contributed.
@@ -415,7 +421,7 @@ async function plan() {
   writeHash();
   const seq = ++state.seq;
   Object.assign(state, {
-    journeys: [], byKey: new Map(), selected: null, hot: null,
+    journeys: [], byKey: new Map(), selected: null, hot: null, warnings: [],
     paging: { later: 'idle', earlier: state.timeMode === 'now' ? 'off' : 'idle' },
   });
   state.sched.anchor = null;
@@ -438,6 +444,7 @@ async function plan() {
     const page = await fetchJourneys(arriving ? 'ARRIVE_BY' : 'DEPART_AT', ref, win);
     if (seq !== state.seq) return;
     merge(page, { initial: true });
+    state.warnings = page.warnings;
     state.status = 'ok';
     state.updatedAt = new Date();
     rememberTrip();
@@ -764,6 +771,8 @@ function setEndpoint(role, place, { replan = true } = {}) {
     return;
   }
   state[role] = place ? { name: place.name, address: place.address, coords: [+place.coords[0], +place.coords[1]], current: !!place.current } : null;
+  // A venue moved to its street address (ADR-021): said once, while it's this search's endpoint.
+  if (place?.routedTo) state[role].routedTo = place.routedTo;
   $('#' + role).value = place ? place.name : '';
   placeMarker(role);
   rememberPlace(state[role]);
@@ -1038,6 +1047,14 @@ function renderNotice() {
     html = state.tab === 'foot'
       ? '<div class="notice">No public transport routes found for this trip.</div>'
       : `<div class="notice">No ${state.tab === 'folding' ? 'folding-bike' : 'shared-bike'} routes for this trip. <button type="button" data-tab="foot">Try on foot</button></div>`;
+  }
+  if (state.status === 'ok') {
+    html += state.warnings.map(w => `<div class="notice warn">${esc(w)}</div>`).join('');
+    for (const p of [state.from, state.to]) {
+      if (!p?.routedTo) continue;
+      const whose = p.name.startsWith(p.routedTo) ? 'the venue' : esc(p.name);
+      html += `<div class="notice">Routed to ${esc(p.routedTo)} on the street, not to ${whose}'s map pin, which can be inside private grounds.</div>`;
+    }
   }
   $('#notice').innerHTML = html;
 }

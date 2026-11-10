@@ -30,6 +30,15 @@ const RENTAL_OVERHEAD_S: i64 = 60;
 const MAX_HUBS: usize = 5;
 /// Tour stations considered per alighting stop.
 const MAX_TOUR_STATIONS: usize = 3;
+/// How far ahead today's bike count says anything. A station that's empty now can be full
+/// by the time you get there (commuters ride Blue-bikes home overnight and bring them back
+/// in the morning), so later trips don't skip it.
+const STOCK_HORIZON_MIN: i64 = 60;
+
+/// Whether a station is worth trying when you'll be there at `at`, seen at `now`.
+fn stock_matters(st: &RentalStation, at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    st.num_vehicles_available > 0 || at > now + Duration::minutes(STOCK_HORIZON_MIN)
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -282,7 +291,7 @@ fn tour_from(
         .stations_near(alight.0, alight.1, 500)?
         .into_iter()
         .filter(|st| {
-            TOUR_PROVIDERS.contains(&st.provider_id.as_str()) && st.num_vehicles_available > 0
+            TOUR_PROVIDERS.contains(&st.provider_id.as_str()) && stock_matters(st, t0, Utc::now())
         })
         .collect();
     stations
@@ -327,12 +336,16 @@ fn tour_from(
         }
         legs.extend(ride_legs);
         let name = pretty_provider(&st.provider_id);
+        let stock = if st.num_vehicles_available > 0 {
+            format!("{} bikes now", st.num_vehicles_available)
+        } else {
+            "no bikes right now; check before you go".to_string()
+        };
         best = Some(Candidate {
             label: format!("{name} round trip"),
             notes: vec![format!(
-                "Round trip: take a {name} at '{}' ({} bikes now, {} min walk from {}), ride {} min, and ride it back to the station later (≈{} min).",
+                "Round trip: take a {name} at '{}' ({stock}, {} min walk from {}), ride {} min, and ride it back to the station later (≈{} min).",
                 st.name,
-                st.num_vehicles_available,
                 walk_s / 60,
                 last_transit.to.name,
                 ride_s / 60,
@@ -348,5 +361,26 @@ fn pretty_provider(id: &str) -> String {
     match id {
         "blue-bike" => "Blue-bike".into(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_station_only_counts_for_trips_soon() {
+        let st = |n| RentalStation {
+            provider_id: "blue-bike".into(),
+            name: "Mol Station".into(),
+            lat: 51.19,
+            lon: 5.12,
+            num_vehicles_available: n,
+        };
+        let now = Utc::now();
+        assert!(stock_matters(&st(3), now + Duration::minutes(10), now));
+        assert!(!stock_matters(&st(0), now + Duration::minutes(30), now));
+        // Searched the evening before: tomorrow's 08:00 doesn't depend on tonight's count.
+        assert!(stock_matters(&st(0), now + Duration::hours(11), now));
     }
 }

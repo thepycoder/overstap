@@ -19,6 +19,13 @@ const NEAR_BIKE_M: f64 = 300.0;
 const PARKED_WALK_MAX_S: u32 = 10 * 60;
 /// Unlocking your own bike.
 const UNLOCK_S: i64 = 60;
+/// A base search still "reaches" the destination when something leaves (or arrives) within
+/// the search window plus this. Later than that, MOTIS has searched on into the afternoon.
+const REACH_SLACK_MIN: i64 = 120;
+/// Shown when public transport runs but the destination point itself can't be reached
+/// after it (e.g. a map pin inside private grounds, ADR-021).
+pub const UNREACHABLE_WARNING: &str = "Hardly any route reaches this exact point after public transport, \
+though the stops around it are served now. It may be inside private grounds: try its street address.";
 
 /// Where your own (non-folding) bike is. It never goes on board: the planner uses it for
 /// whichever street leg it can reach, and the rest of the journey is `carry`.
@@ -180,10 +187,23 @@ fn bike_first(q: &mut PlanQuery, r: &Request) {
     q.max_direct_s = Some(q.max_direct_s.unwrap_or(0).max(r.max_bike_min * 60));
 }
 
+/// What `plan_full` found: the journeys, and warnings about the request itself.
+#[derive(Debug, Default)]
+pub struct Planned {
+    pub journeys: Vec<Journey>,
+    pub warnings: Vec<String>,
+}
+
 /// Plans `r`, sorted by departure. May contain near-duplicates (same trains reached
 /// differently); the caller decides what to hide.
 pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
-    let mut out = match r.carry {
+    Ok(plan_full(c, r)?.journeys)
+}
+
+/// `plan`, plus a warning when the destination point can't be reached after transit.
+pub fn plan_full(c: &Client, r: &Request) -> Result<Planned> {
+    // `base`: the tab's plain search, whose reach says whether the destination works.
+    let (mut out, base) = match r.carry {
         Carry::Foot => {
             let mut q = base_query(r);
             // MOTIS defaults to 15 min; a 2 km walk from the station is normal.
@@ -196,15 +216,22 @@ pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
                 q.cycling_speed = Some(r.ride_kmh / 3.6);
             }
             let p = c.plan(&q)?;
-            p.itineraries
+            let base = p.itineraries.clone();
+            let out = p
+                .itineraries
                 .into_iter()
                 .chain(p.direct)
                 .map(Journey::motis)
-                .collect()
+                .collect();
+            (out, base)
         }
         Carry::Folding => folding(c, r)?,
         Carry::Shared => shared(c, r)?,
     };
+    let mut warnings = vec![];
+    if unreachable(c, r, &base)? {
+        warnings.push(UNREACHABLE_WARNING.to_string());
+    }
     // Your parked bike is one more way to do the last stretch, next to the tab's own.
     if let OwnBike::Parked(at) = r.bike {
         if r.carry != Carry::Folding && !bike_here(r) {
@@ -216,10 +243,56 @@ pub fn plan(c: &Client, r: &Request) -> Result<Vec<Journey>> {
     // normal and the fast search, or the same tour built from two walking plans).
     let mut seen = std::collections::HashSet::new();
     out.retain(|j| seen.insert(signature(&j.it)));
-    Ok(out)
+    Ok(Planned {
+        journeys: out,
+        warnings,
+    })
 }
 
-fn folding(c: &Client, r: &Request) -> Result<Vec<Journey>> {
+/// Something in `its` uses transit and leaves (arrives, for arrive-by) close to the asked time.
+fn reaches(its: &[Itinerary], r: &Request) -> bool {
+    let t = r.time.unwrap_or_else(Utc::now);
+    let span = Duration::minutes(i64::from(r.window_min) + REACH_SLACK_MIN);
+    its.iter()
+        .filter(|it| it.legs.iter().any(|l| l.is_transit()))
+        .any(|it| {
+            if r.arrive_by {
+                it.end_time >= t - span
+            } else {
+                it.start_time <= t + span
+            }
+        })
+}
+
+/// The base search doesn't reach the destination around the asked time, but a control search
+/// to the stop those routes end at (or that walking would use) does: transit runs, and it's
+/// the last stretch to this exact point that fails. Without the control a night search, with
+/// nothing running for hours, would look the same.
+fn unreachable(c: &Client, r: &Request, base: &[Itinerary]) -> Result<bool> {
+    if reaches(base, r) {
+        return Ok(false);
+    }
+    let last_stop = |its: &[Itinerary]| {
+        its.iter()
+            .find_map(|it| it.legs.iter().rev().find(|l| l.is_transit()))
+            .map(|l| (l.to.lat, l.to.lon))
+    };
+    let mut q = base_query(r);
+    q.max_pre_transit_s = Some(3600);
+    q.max_post_transit_s = Some(3600);
+    let stop = match last_stop(base) {
+        Some(s) => s,
+        // Nothing at all (e.g. no bike route to the point): ask where walking would get off.
+        None => match last_stop(&c.plan(&q)?.itineraries) {
+            Some(s) => s,
+            None => return Ok(false),
+        },
+    };
+    q.to = format!("{},{}", stop.0, stop.1);
+    Ok(reaches(&c.plan(&q)?.itineraries, r))
+}
+
+fn folding(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
     let query = |kmh: f64, lead: Duration| {
         let mut q = base_query(r);
         q.pre_transit_modes = vec!["BIKE".into()];
@@ -238,6 +311,7 @@ fn folding(c: &Client, r: &Request) -> Result<Vec<Journey>> {
         q
     };
     let p = c.plan(&query(r.ride_kmh, Duration::zero()))?;
+    let base = p.itineraries.clone();
     let mut out: Vec<Journey> = p
         .itineraries
         .into_iter()
@@ -250,7 +324,7 @@ fn folding(c: &Client, r: &Request) -> Result<Vec<Journey>> {
         let p = c.plan(&query(fast, lead))?;
         out.extend(p.itineraries.into_iter().map(Journey::motis));
     }
-    Ok(out)
+    Ok((out, base))
 }
 
 /// Your bike parked at `at` from an earlier trip: transit to there (getting to the first stop
@@ -314,7 +388,7 @@ fn parked(c: &Client, r: &Request, at: (f64, f64)) -> Result<Vec<Journey>> {
 
 /// Shared bikes: MOTIS's rental plans (hub-only providers corrected), walking plans,
 /// and round-trip station bikes priced as a tour from every alighting stop.
-fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
+fn shared(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
     let Some(dest) = parse_coord(&r.to) else {
         bail!("shared bikes need the destination as lat,lon")
     };
@@ -339,6 +413,7 @@ fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
         bike_first(&mut walk_q, r);
     }
     let walk = c.plan(&walk_q)?.itineraries;
+    let base = walk.clone();
 
     let s = Street::new(c);
     let mut out = vec![];
@@ -368,7 +443,7 @@ fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
         }
         out.push(Journey::motis(it));
     }
-    Ok(out)
+    Ok((out, base))
 }
 
 #[cfg(test)]
@@ -415,6 +490,38 @@ mod tests {
         assert!(bike_here(&r));
         r.from = "50.8453,4.3571".into();
         assert!(!bike_here(&r));
+    }
+
+    #[test]
+    fn reach_is_judged_around_the_asked_time() {
+        let at = |h: u32, m: u32| {
+            chrono::NaiveDate::from_ymd_opt(2026, 11, 10)
+                .unwrap()
+                .and_hms_opt(h, m, 0)
+                .unwrap()
+                .and_utc()
+        };
+        let trip = |start: DateTime<Utc>, end: DateTime<Utc>| {
+            let mut it = Itinerary::from_legs(vec![leg("REGIONAL_RAIL", Some("t"))]);
+            it.start_time = start;
+            it.end_time = end;
+            it
+        };
+        let mut r = Request::new("51.1,4.0".into(), "51.2,5.0".into(), Carry::Shared);
+        r.time = Some(at(4, 32));
+        // Window 60 min + 2 h slack: 07:32 still counts, the afternoon doesn't.
+        assert!(reaches(&[trip(at(7, 30), at(9, 0))], &r));
+        assert!(!reaches(&[trip(at(12, 9), at(15, 3))], &r));
+        assert!(!reaches(&[], &r));
+        // A walk-only plan never counts.
+        assert!(!reaches(
+            &[Itinerary::from_legs(vec![leg("WALK", None)])],
+            &r
+        ));
+        r.arrive_by = true;
+        r.time = Some(at(8, 0));
+        assert!(reaches(&[trip(at(5, 0), at(7, 0))], &r));
+        assert!(!reaches(&[trip(at(1, 0), at(4, 50))], &r));
     }
 
     #[test]
