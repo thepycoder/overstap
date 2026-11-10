@@ -68,6 +68,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [~] Watch mode: ride mode v0 re-checks every 30 s and alerts from the page (ADR-016)
 - [ ] Server-side ride watcher + Web Push (VAPID), so alerts arrive with the app closed
 - [ ] Auto-switch to plan B when a connection is certainly lost (now: one tap)
+- [x] Plan B can be "stay on and change later" on the ride you're on (ADR-025)
+- [ ] Expose `minTransferTime` in the web UI, or a "safer route" pass when a change is < 5 min (the Pareto search hides slower-but-robust routes)
 
 ## UI (see docs/ui-concepts.md)
 

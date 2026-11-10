@@ -2144,6 +2144,19 @@ function rideTrackHTML(next) {
   return `<div class="r-trk${t.changed ? ' changed' : ''}"><small>${esc(label)}</small><b>${esc(t.at)}</b></div>`;
 }
 
+// Plan B that keeps you on the ride bringing you to change `ch` (it starts with that ride).
+function staysOn(ch, fb) {
+  const prev = currentRide()?.legs[ch.a];
+  return !!(fb && prev?.tripId && fb.legs[0]?.tripId === prev.tripId);
+}
+
+// "stay on to Antwerpen-Berchem" or "IC 17:45": the first thing plan B has you do.
+function planBWhat(ch, fb) {
+  if (staysOn(ch, fb)) return `stay on to ${fb.legs[0].toName}`;
+  const first = fb.transit[0];
+  return first ? `${first.route.display_name} ${fmtTime(first.dep)}` : legLabel(fb.legs[0]);
+}
+
 function changeCardHTML(ch, k, fb) {
   const scale = Math.max(SPARE_SCALE_MIN * 60, ch.walk + Math.max(ch.spare, 0));
   const walkW = (ch.walk / scale) * 100;
@@ -2155,9 +2168,8 @@ function changeCardHTML(ch, k, fb) {
   if (fb === undefined) plan = '<span class="muted">Looking for a plan B…</span>';
   else if (!fb) plan = '<span class="muted">No other way on from here tonight</span>';
   else {
-    const first = fb.transit[0];
     const late = Math.round((fb.end - currentRide().end) / MIN);
-    plan = `<button type="button" class="r-planb" data-planb="${k}">If missed: ${first ? `${esc(first.route.display_name)} ${fmtTime(first.dep)}` : esc(legLabel(fb.legs[0]))} → arrive ${fmtTime(fb.end)}
+    plan = `<button type="button" class="r-planb" data-planb="${k}">If missed: ${esc(planBWhat(ch, fb))} → arrive ${fmtTime(fb.end)}
       <b class="${late >= 15 ? 'bad' : 'tight'}">${late >= 0 ? '+' : ''}${late}′</b></button>`;
   }
   return `<div class="r-card ${l.cancelled ? 'bad' : spareCls(ch.spare)}">
@@ -2229,13 +2241,14 @@ function maybeAlert(j, m, now, lost) {
   if (m.next.getOff != null && m.next.at - now <= GET_OFF_WARN && !rideState.warned.has(`off${m.next.getOff}@${j.key}`)) {
     rideState.warned.add(`off${m.next.getOff}@${j.key}`);
     const planB = lost?.fb && lost.ch.a === m.next.getOff;
-    notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}${m.next.track ? `, ${m.next.track.what.toLowerCase()} ${m.next.track.at}` : ''}` : '');
+    if (planB && staysOn(lost.ch, lost.fb)) notify(`Stay on at ${lost.ch.place}`, `Plan B: ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
+    else notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}${m.next.track ? `, ${m.next.track.what.toLowerCase()} ${m.next.track.at}` : ''}` : '');
   }
   if (!old || old.key !== facts.key) return;
   const msgs = [];
   if (facts.lost && facts.lost !== old.lost) {
     msgs.push(`You'll miss the ${lost.ch.leg.route.display_name} at ${lost.ch.place}`);
-    if (lost.fb) msgs.push(`Plan B: ${lost.fb.transit[0] ? `${lost.fb.transit[0].route.display_name} ${fmtTime(lost.fb.transit[0].dep)}, ` : ''}arrive ${fmtTime(lost.fb.end)}`);
+    if (lost.fb) msgs.push(`Plan B: ${planBWhat(lost.ch, lost.fb)}, arrive ${fmtTime(lost.fb.end)}`);
   } else if (facts.cancelled && !old.cancelled) msgs.push('A ride on your route is cancelled');
   if (Math.abs(facts.arrive - old.arrive) >= 2) msgs.push(`Arrival now ${fmtTime(new Date(facts.arrive * MIN))} (${facts.arrive > old.arrive ? '+' : ''}${facts.arrive - old.arrive}′)`);
   if (!facts.lost && ch && old.spare != null && facts.spare !== old.spare && (Math.abs(facts.spare - old.spare) >= 3 || (facts.spare < 2) !== (old.spare < 2))) {
@@ -2272,7 +2285,10 @@ async function loadRideExtras(j, force = false) {
     changes: m.changes.map(ch => {
       const prev = j.legs[ch.a];
       const stop = prev.stops[prev.stops.length - 1];
-      return { from: stop?.id || ll(stop.coords), after: ch.leg.dep.toISOString(), avoidTrip: ch.leg.tripId };
+      const board = prev.stops[0];
+      // The ride you're on to the change: staying on it to a later stop is a plan B too.
+      const on = prev.kind === 'transit' && prev.tripId && board ? { onTrip: prev.tripId, board: board.id || ll(board.coords) } : {};
+      return { from: stop?.id || ll(stop.coords), after: ch.leg.dep.toISOString(), avoidTrip: ch.leg.tripId, ...on };
     }),
     rentals: [],
   };
@@ -2323,7 +2339,12 @@ function planBJourney(k) {
   if (!j || !fb) return null;
   const ch = rideModel(j).changes[k];
   if (!ch) return null;
-  const raw = { legs: [...j.raw.legs.slice(0, ch.a + 1), ...fb.raw.legs], label: 'Plan B', notes: [`Plan B from ${ch.place}, made ${fmtTime(new Date())}.`] };
+  // A stay-on plan B starts with the ride you're on (from where you boarded): it replaces that leg.
+  const stay = staysOn(ch, fb);
+  const raw = {
+    legs: [...j.raw.legs.slice(0, stay ? ch.a : ch.a + 1), ...fb.raw.legs], label: 'Plan B',
+    notes: [`Plan B ${stay ? `staying on past ${ch.place}` : `from ${ch.place}`}, made ${fmtTime(new Date())}.`],
+  };
   const nj = normJourney(raw, null, j.tab === 'folding');
   if (!nj) return null;
   Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab, bike: j.bike, saved: true });
