@@ -51,6 +51,8 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Own bike mid-trip: pick it up at a station and ride to another station (bike between transit legs)
 - [ ] Bike-parking time at the station for the own-bike first leg (lock + walk to the platform)
 - [ ] Provider rules as a config file instead of constants in `lastmile.rs`
+- [ ] Blue-bike legs with `returnConstraint: NONE` from MOTIS (e.g. Geel Muziekacademie, results-2026-11-10): check the De Lijn GBFS feed; if they really are round-trip, price them as tours like the rest
+- [ ] Shared tab: build Blue-bike tours from the rental plans too (Donkey to the station + Blue-bike tour at Mol is never offered)
 - [ ] Rental dock availability at drop-off (docks free) and bike availability at pickup time
 - [ ] Benchmark harness vs Citymapper / NMBS planner on my real trips
 
@@ -73,6 +75,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Show rental availability (bikes at pickup, docks at drop-off) on rental blocks
 - [ ] "Open in app" links for rentals (MOTIS gives `rentalUriAndroid/IOS`)
 - [ ] Lane detail via one corridor vs another (canvas "Two corridors" D/E): group or tint lanes by corridor
+- [x] Longest bike ride as a setting ("Bike ≤ N min", per tab), also capping Blue-bike tours (ADR-020)
 - [x] Variants view of a route (canvas round 4, braided lane) from the search's own results (ADR-019)
 - [ ] `/api/variants`: per-leg alternatives for the braided lane (ride/bus to each stop of the chosen train, adjacent departures per leg, dominance pruning; maybe MOTIS `numLegAlternatives`)
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)

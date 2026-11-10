@@ -357,6 +357,28 @@ feed the same view later. Loading earlier or later routes in the timetable adds 
 
 ---
 
+## ADR-020 — Longest bike ride is a setting, and caps overstap's own tours too
+*2026-11-10 · accepted*
+
+**Context.** The API always took `maxbike`, but the web UI hard-coded it per tab (folding 45,
+shared 60 min), so a 46-min ride from Geel could not be ruled out. overstap's Blue-bike round
+trip (`lastmile::tour_option`) ignored it entirely: an 82-min ride from Turnhout appeared
+under a 60-min limit.
+
+**Decision.** A "Bike ≤ N min" menu (10–90) next to the own-bike menu, per tab, defaulting to
+the old constants; kept in the browser like the bike's place (not in the URL: it's how far you
+like to ride, not part of a route). The tour is only offered when its ride is within the
+limit; MOTIS's own plans keep using `max_pre/post_transit_s`. Hidden on foot without an own
+bike, where it changes nothing.
+
+**Consequences.** The limit is on street time after transit (walk to the rack + ride for
+MOTIS rentals; the ride alone for tours), so the two differ by the walk to the rack.
+The settings row now scrolls sideways when it doesn't fit, and the header grid can no longer
+be wider than the screen (it was, on 360 px phones with results, which pushed the own-bike
+menu off screen).
+
+---
+
 ## ADR-021 — Venues route to their street address; warn when a point can't be reached
 *2026-11-10 · accepted*
 
