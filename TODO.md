@@ -68,6 +68,10 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [~] Watch mode: ride mode v0 re-checks every 30 s and alerts from the page (ADR-016)
 - [ ] Server-side ride watcher + Web Push (VAPID), so alerts arrive with the app closed
 - [ ] Auto-switch to plan B when a connection is certainly lost (now: one tap)
+- [x] Plan B can be "stay on and change later" on the ride you're on (ADR-025)
+- [ ] Expose `minTransferTime` in the web UI, or a "safer route" pass when a change is < 5 min (the Pareto search hides slower-but-robust routes)
+- [x] Per-stop live times in stop lists; short changes are "at risk, decide at the stop" until their cutoff; catch-up routes (timetable search, ≤ 5′ short on live times) (ADR-026)
+- [ ] Catch-up likelihood from the RT logger: per stretch, the shortest running time actually observed → "likely / possible / gone" instead of a flat 5′ threshold
 
 ## UI (see docs/ui-concepts.md)
 

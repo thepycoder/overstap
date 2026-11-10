@@ -480,3 +480,63 @@ sight of where you'd been and the ride you were on had no details (track, how la
 
 **Consequences.** Ride mode is longer; on a phone the later legs scroll. The top (next move,
 countdown, track badge) is unchanged.
+
+---
+
+## ADR-025 — Plan B can be "stay on": change later on the ride you're on
+*2026-11-10 · accepted*
+
+**Context.** Mol → Jubelfeestlaan, the L to Antwerpen-Centraal with a 4-min change to the IC
+at Herentals. The L ran late and ride mode said the change was lost (right), but plan B was
+"get off at Herentals, wait 21 min for a train to Berchem and change there". The rider stays on
+the L instead: it also stops at Lier, where the very same IC calls 4 min after the L arrives.
+Plan B planned only *from the change stop, after the missed departure*, so the ride you're
+on had already left in that search. Staying on was never a candidate. (In planning, MOTIS
+also hides this route while the change is feasible: same departure, same changes, later
+arrival → Pareto-dominated. Slack is not one of its criteria.)
+
+**Decision.** `/api/ride` takes, per change, the incoming trip (`onTrip`) and where you
+boarded it (`board`). Besides "get off here", it tries "stay on to each of the next 5 stops":
+`/trip` gives the stops with live times, one planner run per stop leaves at the live
+arrival there (in parallel), and the best is prefixed with that ride sliced from your boarding
+stop (`overshoot::slice`, shape cut to match). Earliest arrival wins, then fewer rides, and
+staying on wins a tie. Continuations may use the trip you'd miss (catching it further on is the
+point); they may not start with the same trip (that's a later stop's candidate). The frontend
+replaces your current leg with plan B's first leg ("If missed: stay on to Lier"); the get-off
+alert says "Stay on at Herentals".
+
+**Consequences.** Up to 6 extra planner runs per change (each a few MOTIS calls), in parallel;
+still well under a second per change at home. Planning-time robustness (showing a safer route
+while a tight change still looks feasible) remains open: TODO "per-change slack + fallbacks".
+
+---
+
+## ADR-026 — Live times are forecasts: decide at the stop, and show routes a late train might still make
+*2026-11-10 · accepted*
+
+**Context.** L 4437 left Mol 7 min late. Ride mode and the search treated the Lier change to
+the 17:40 IC as lost and sent the rider on to Berchem. The train reached Lier at 17:36 (+4):
+NMBS timetables have recovery time, and the NMBS feed mostly carries the current delay
+forward unchanged, so forecasts for later stops are pessimistic. On top of that, the stop list
+showed every stop as *scheduled departure + delay at the boarding stop* (Lier 17:35 + 7 =
+"17:42"), although MOTIS had per-stop live times (Lier arrival 17:36).
+
+**Decision.**
+1. **Per-stop live times.** Stops keep their own live `arr`/`dep` (from the plan and from
+   `/api/live`). Stop lists show the arrival at each stop; "next stop" uses them too.
+2. **Decide at the stop.** A change that live times say you'll miss is *at risk* until its
+   cutoff (the next ride's live departure minus the walk) passes. It's *lost* only after that
+   cutoff, or when the next ride is cancelled. Plan B starts at that stop (or stays on), so
+   waiting costs nothing. Ride mode says "N′ short: change if you're there by HH:MM, else
+   plan B", shows "arrive A or B", and the get-off alert says the same. "Switch to plan B now"
+   is still offered.
+3. **Catch-up routes.** Every search (within 3 h of now) runs one more MOTIS query with
+   `realtimeMode=REALTIME_ANNOTATION_ONLY`: routed on the timetable, annotated with live
+   times. Routes whose tightest change is 0–5 min short on live times are added, with
+   `catchUp {at, shortS}` and a note. They show as "⚠ N′ short" / "If it makes up N min", and
+   (as `atRisk` routes) never hide others. Plan B searches don't do this: plan B should be a
+   sure thing.
+
+**Consequences.** One more MOTIS call per search. The 5-min threshold and "decide at the stop"
+don't use how often trains actually catch up. Learning catch-up per stretch from the RT logger
+(the shortest running time actually observed) would turn "N′ short" into a likelihood.

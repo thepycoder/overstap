@@ -6,9 +6,9 @@
 //! | `GET /api/search?q=&near=lat,lng` | place search (Citymapper, else MOTIS; `places.rs`) |
 //! | `GET /api/resolve?id=` | coordinates of a Citymapper search hit |
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
-//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there) |
+//! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there); `catchUp` on routes that need a late train to make up time |
 //! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks — NMBS's from iRail —, cancellations) |
-//! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change, bikes at rental pickups |
+//! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change (get off there, or stay on and change later), bikes at rental pickups |
 //! | `GET /healthz` | MOTIS reachable? |
 //!
 //! Blocking and threaded (tiny_http + reqwest::blocking): one rider, a handful of requests.
@@ -340,7 +340,14 @@ struct ChangeRequest {
     after: DateTime<Utc>,
     /// The trip you'd have missed, so it's never offered as its own plan B.
     avoid_trip: Option<String>,
+    /// The trip that brings you to the change, and the stop you boarded it at (stop id or
+    /// "lat,lng"): staying on it to a later stop is a plan B too.
+    on_trip: Option<String>,
+    board: Option<String>,
 }
+
+/// How many stops past a change ride mode tries for "stay on and change there".
+const STAY_ON_STOPS: usize = 5;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -348,6 +355,114 @@ struct RentalRequest {
     lat: f64,
     lng: f64,
     provider: String,
+}
+
+/// Earliest home first, then fewer rides (ties go to the first candidate).
+fn rank_plan_b(j: &planner::Journey) -> (DateTime<Utc>, usize) {
+    let rides = j.it.legs.iter().filter(|l| l.is_transit()).count();
+    (j.it.end_time, rides)
+}
+
+/// Plan B by getting off at the change: anything leaving that stop after the missed ride.
+fn plan_b_here(
+    c: &Client,
+    ch: &ChangeRequest,
+    to: &str,
+    carry: Carry,
+    bike: OwnBike,
+) -> Option<planner::Journey> {
+    let mut q = planner::Request::new(ch.from.clone(), to.to_string(), carry);
+    q.time = Some(ch.after + chrono::Duration::seconds(60));
+    q.bike = bike;
+    q.window_min = 90;
+    // Plan B should be a sure thing, not another route that needs the train to catch up.
+    q.catch_up = false;
+    let js = planner::plan(c, &q)
+        .map_err(|e| eprintln!("  ride: plan B from {}: {e:#}", ch.from))
+        .ok()?;
+    js.into_iter()
+        .filter(|j| {
+            let first = j.it.legs.iter().find(|l| l.is_transit());
+            first.is_some_and(|l| {
+                l.trip_id.is_some() && l.trip_id != ch.avoid_trip && l.trip_id != ch.on_trip
+            }) || (first.is_none() && j.it.legs.iter().any(|l| l.mode != "WALK"))
+        })
+        .min_by_key(|j| (j.it.end_time, -j.it.start_time.timestamp()))
+}
+
+/// Plan B by staying on the ride that brings you to the change and changing at one of the
+/// next stops (MOTIS can't start a search aboard a trip; ADR-025). The journey starts with
+/// that ride from where you boarded it, so it replaces your current leg.
+fn plan_b_stay_on(
+    c: &Client,
+    ch: &ChangeRequest,
+    to: &str,
+    carry: Carry,
+    bike: OwnBike,
+) -> Option<planner::Journey> {
+    let (trip_id, board) = (ch.on_trip.as_deref()?, ch.board.as_deref()?);
+    let trip = c
+        .trip(trip_id)
+        .map_err(|e| eprintln!("  ride: stay on {trip_id}: {e:#}"))
+        .ok()?
+        .legs
+        .into_iter()
+        .next()?;
+    let a = crate::overshoot::stop_index(&trip, board)?;
+    let k = crate::overshoot::stop_index(&trip, &ch.from)?;
+    if k <= a {
+        return None;
+    }
+    let places = crate::overshoot::trip_places(&trip);
+    let stops: Vec<(usize, String, DateTime<Utc>)> = (k + 1..places.len())
+        .take(STAY_ON_STOPS)
+        .filter_map(|b| {
+            let p = places[b];
+            let id = p.stop_id.clone().unwrap_or(format!("{},{}", p.lat, p.lon));
+            Some((b, id, p.arrival.or(p.scheduled_arrival)?))
+        })
+        .collect();
+    std::thread::scope(|s| {
+        let handles: Vec<_> = stops
+            .iter()
+            .map(|(b, id, arr)| {
+                let (trip, places) = (&trip, &places);
+                s.spawn(move || -> Option<planner::Journey> {
+                    let mut q = planner::Request::new(id.clone(), to.to_string(), carry);
+                    q.time = Some(*arr);
+                    q.bike = bike;
+                    q.window_min = 60;
+                    q.catch_up = false;
+                    let js = planner::plan(c, &q)
+                        .map_err(|e| eprintln!("  ride: plan B from {id}: {e:#}"))
+                        .ok()?;
+                    // Going on with this same trip is a later stop's candidate, not this one's.
+                    let on = js
+                        .into_iter()
+                        .filter(|j| {
+                            let first = j.it.legs.iter().find(|l| l.is_transit());
+                            first.map_or(!j.it.legs.is_empty(), |l| {
+                                l.trip_id.as_deref() != Some(trip_id)
+                            })
+                        })
+                        .min_by_key(|j| j.it.end_time)?;
+                    let ride = crate::overshoot::slice(trip, a, *b)?;
+                    let mut legs = vec![ride];
+                    legs.extend(on.it.legs);
+                    Some(planner::Journey {
+                        label: Some(format!("Stay on to {}", places[*b].name)),
+                        notes: on.notes,
+                        catch_up: None,
+                        it: crate::motis::Itinerary::from_legs(legs),
+                    })
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok().flatten())
+            .min_by_key(rank_plan_b)
+    })
 }
 
 /// Ride mode extras. For every change still ahead: the best way on if you miss it (earliest
@@ -368,27 +483,22 @@ fn ride(c: &Client, body: &str) -> Result<Value> {
         b => b,
     };
     let changes: Vec<ChangeRequest> = r.changes.into_iter().take(4).collect();
-    // One planner run per change, in parallel: each is a few MOTIS calls.
+    // Per change, in parallel: get off and go on from that stop, or stay on and change later.
     let fallbacks: Vec<Option<planner::Journey>> = std::thread::scope(|scope| {
         let handles: Vec<_> = changes
             .iter()
             .map(|ch| {
-                let to = r.to.clone();
-                scope.spawn(move || -> Option<planner::Journey> {
-                    let mut q = planner::Request::new(ch.from.clone(), to, carry);
-                    q.time = Some(ch.after + chrono::Duration::seconds(60));
-                    q.bike = bike;
-                    q.window_min = 90;
-                    let js = planner::plan(c, &q)
-                        .map_err(|e| eprintln!("  ride: plan B from {}: {e:#}", ch.from))
-                        .ok()?;
-                    js.into_iter()
-                        .filter(|j| {
-                            let first = j.it.legs.iter().find(|l| l.is_transit());
-                            first.is_some_and(|l| l.trip_id.is_some() && l.trip_id != ch.avoid_trip)
-                                || (first.is_none() && j.it.legs.iter().any(|l| l.mode != "WALK"))
-                        })
-                        .min_by_key(|j| (j.it.end_time, -j.it.start_time.timestamp()))
+                let to = r.to.as_str();
+                scope.spawn(move || {
+                    std::thread::scope(|s| {
+                        let on = s.spawn(|| plan_b_stay_on(c, ch, to, carry, bike));
+                        let here = s.spawn(|| plan_b_here(c, ch, to, carry, bike));
+                        // Staying on first: on a tie it's the calmer plan B.
+                        [on, here]
+                            .into_iter()
+                            .filter_map(|h| h.join().ok().flatten())
+                            .min_by_key(rank_plan_b)
+                    })
                 })
             })
             .collect();
