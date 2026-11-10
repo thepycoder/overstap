@@ -192,6 +192,28 @@ pub fn stop_index(trip: &Leg, at: &str) -> Option<usize> {
     (d < (300.0_f64 / 111_000.0).powi(2)).then_some(i)
 }
 
+/// Where to change from trip `a` (boarded at its stop `board`) to trip `b` (left at its stop
+/// `alight`): of the stops both call at, in order, the one with the most live slack after
+/// `walk_s` of transfer. Returns (stop index in `a`, stop index in `b`, slack in seconds).
+pub fn best_change(
+    a: &Leg,
+    board: usize,
+    b: &Leg,
+    alight: usize,
+    walk_s: i64,
+) -> Option<(usize, usize, i64)> {
+    let (pa, pb) = (trip_places(a), trip_places(b));
+    (board + 1..pa.len())
+        .filter_map(|i| {
+            let id = pa[i].stop_id.as_deref()?;
+            let j = (0..alight).find(|&j| pb[j].stop_id.as_deref() == Some(id))?;
+            let arr = pa[i].arrival.or(pa[i].scheduled_arrival)?;
+            let dep = pb[j].departure.or(pb[j].scheduled_departure)?;
+            Some((i, j, (dep - arr).num_seconds() - walk_s))
+        })
+        .max_by_key(|&(i, _, slack)| (slack, std::cmp::Reverse(i)))
+}
+
 /// The ride on `trip` from its `a`-th to its `b`-th stop (indices into [`trip_places`]).
 pub fn slice(trip: &Leg, a: usize, b: usize) -> Option<Leg> {
     let places = trip_places(trip);
@@ -368,6 +390,37 @@ mod tests {
         assert_eq!(stop_index(&t, "51.4001,4.5002"), Some(2));
         assert_eq!(stop_index(&t, "52.5,4.5"), None);
         assert_eq!(stop_index(&t, "nowhere"), None);
+    }
+
+    #[test]
+    fn picks_the_change_stop_with_most_slack() {
+        // The IC calls at Herentals (16:24) and Lier (16:40), like the L (16:23, 16:35).
+        let l = trip();
+        let ic = Leg {
+            from: stop("Hasselt", "has", 50.9, None, Some("2026-11-10T16:00:00Z")),
+            intermediate_stops: vec![
+                stop(
+                    "Herentals",
+                    "her",
+                    51.2,
+                    Some("2026-11-10T16:23:00Z"),
+                    Some("2026-11-10T16:24:00Z"),
+                ),
+                stop(
+                    "Lier",
+                    "lie",
+                    51.4,
+                    Some("2026-11-10T16:39:00Z"),
+                    Some("2026-11-10T16:40:00Z"),
+                ),
+            ],
+            to: stop("Brussel", "bru", 50.85, Some("2026-11-10T17:16:00Z"), None),
+            ..Default::default()
+        };
+        // 4 min transfer: Herentals is 3 min short, Lier has a minute to spare.
+        assert_eq!(best_change(&l, 0, &ic, 3, 240), Some((2, 2, 60)));
+        // Board the L after Lier: no shared stop left before the IC's end.
+        assert_eq!(best_change(&l, 2, &ic, 3, 240), None);
     }
 
     #[test]
