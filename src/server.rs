@@ -7,7 +7,7 @@
 //! | `GET /api/resolve?id=` | coordinates of a Citymapper search hit |
 //! | `GET /api/reverse?lat=&lng=` | name for a dropped pin |
 //! | `GET /api/journeys?start=&end=&mode=&time=&arrive=&window=&kmh=&fast=&maxbike=&bike=` | journeys, MOTIS-shaped; `bike=here` (your own bike is with you) or `bike=lat,lng` (parked there) |
-//! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks, cancellations) |
+//! | `POST /api/live {"trips":[tripId…]}` | current state of those trips (live times, tracks — NMBS's from iRail —, cancellations) |
 //! | `POST /api/ride {mode,to,changes,rentals}` | ride mode: plan B per change, bikes at rental pickups |
 //! | `GET /healthz` | MOTIS reachable? |
 //!
@@ -305,7 +305,8 @@ fn live(c: &Client, body: &str) -> Result<Value> {
         }
         match c.trip(&id) {
             Ok(it) => {
-                if let Some(leg) = it.legs.into_iter().next() {
+                if let Some(mut leg) = it.legs.into_iter().next() {
+                    crate::irail::fill_tracks(&mut leg, Utc::now());
                     out.insert(id, leg);
                 }
             }

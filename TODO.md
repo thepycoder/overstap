@@ -59,6 +59,9 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 ## Phase 3 — Real time & reliability
 
 - [x] Delay *simulation* (`--delay N`) for use case 3
+- [x] NMBS platforms from iRail in `/api/live`; ride mode shows the next track big (ADR-022)
+- [ ] Ride mode: flag platform changes iRail reports (`platforminfo.normal = 0`)
+- [ ] De Lijn platforms: check whether its GTFS has `platform_code` (MOTIS `track`) at stations like Gent-Sint-Pieters
 - [ ] Delay distributions from logger history
 - [ ] P(transfer holds) and expected-arrival scoring
 - [ ] Contingency policies (decision trees) as output, via `numLegAlternatives`

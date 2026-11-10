@@ -13,7 +13,7 @@ Status checked hands-on on 2026-10-29 (download + MOTIS import) unless marked "v
 | NMBS (alt. portal) | GTFS + RT | `…/api/gtfs/feed/nmbssncb/static`, `…/nmbssncb/rt/trip-update` | Same Belgian Mobility portal | From Transitland atlas; not tested |
 | TEC | GTFS + RT | `…/api/gtfs/feed/tec/static`, `…/tec/rt/trip-update` | Same portal | Lower priority |
 | STIB/MIVB | GTFS | `…/api/gtfs/feed/stibmivb/static` | Same portal | Lower priority |
-| iRail | REST | api.irail.be | Open, unofficial | Prototyping only |
+| iRail | REST | api.irail.be | Open, unofficial | NMBS platforms for `/api/live` (ADR-022); nothing else |
 
 The "Belgian Mobility" portal (`api-management-opendata-production.azure-api.net`) is
 the national access point; registering for a `bmc-partner-key` is still wise in

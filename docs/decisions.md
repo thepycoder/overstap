@@ -412,3 +412,26 @@ can be inside grounds too).
 only when a search looks unreachable. Places already in a browser's recent list keep their old
 coordinates until picked again from search. Real gates (OSM `entrance=*`, gates on the site
 boundary) remain the proper fix for sites with several entrances.
+
+## ADR-022 — NMBS platforms from iRail, shown big in ride mode
+
+**Context.** In ride mode the rider wants to know where to go for the next train. The NMBS
+GTFS has no tracks; MOTIS shows one only once GTFS-RT assigns it, often minutes before
+departure, so ride mode mostly had none. iRail's `vehicle` endpoint has each train's
+platform at every stop well ahead (NMBS's own data, changes included).
+
+**Decision.**
+- `/api/live` fills tracks MOTIS lacks on NMBS trips from iRail (`irail.rs`): one request per
+  train number + date, matched to stops by UIC code and scheduled time; only trains running
+  now or within 2 h; paced at ≤ 3 req/s (iRail's limit) and cached 5 min. A MOTIS track always
+  wins. iRail is used for this only; any failure leaves the tracks empty.
+- Ride mode puts the next ride's track (trains) or platform (buses/trams, when the feed has
+  one) in a large badge beside the countdown: "Track 4" when boarding next, "then track 4"
+  while still getting there or riding the previous leg, orange "track changed" when RT moves it.
+  The next-move alert names it, and a track change on its own buzzes too.
+
+**Consequences.** Tracks appear on the first live refresh instead of the search result itself
+(planning makes no iRail calls). iRail is unofficial: if it disappears, we're back to RT-only
+tracks. A change iRail knows about (`platforminfo.normal = 0`, no original given) isn't flagged yet. De Lijn
+platforms depend on `platform_code` in its GTFS (not checked).
+

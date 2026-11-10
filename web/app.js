@@ -1870,7 +1870,12 @@ function currentRide() {
 const legLabel = l => (l.kind === 'transit' ? `${l.route.display_name || ''}${l.headsign ? ` to ${l.headsign}` : ''}`
   : l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: 'your bike', walk: 'walk', scooter: 'scooter' }[l.kind] || l.kind);
 
-// Where you are in the journey (by the clock) and what comes next.
+// Where to board a ride: a train's track, a bus or tram's platform (when the feed has one).
+const boardAt = l => (l?.kind === 'transit' && l.live?.platform
+  ? { what: l.vehicle === 'train' ? 'Track' : 'Platform', at: l.live.platform, changed: l.live.platformChanged } : null);
+
+// Where you are in the journey (by the clock) and what comes next. `track` is where to go for
+// the next ride you board; `then` when you get off or travel some way first.
 function rideModel(j, now = Date.now()) {
   const legs = j.legs;
   const names = legNames(j);
@@ -1886,21 +1891,23 @@ function rideModel(j, now = Date.now()) {
     }
     return `${n.kind === 'walk' ? 'walk' : n.rental ? `${n.rental.systemName || 'shared bike'}` : 'ride'} ${Math.round(n.dur / 60)}′`;
   };
+  const nextRide = k => legs[transit.find(t => t > k)];
   let next;
   if (now < +j.start) {
     const l = legs[0];
     next = { at: j.start, title: l.kind === 'transit' ? `Board the ${legLabel(l)}` : `Leave ${j.from.name}`,
-      sub: l.kind === 'transit' ? names[0].from : `${l.kind === 'walk' ? 'walk' : 'ride'} ${Math.round(l.dur / 60)}′ to ${names[0].to || 'the station'}` };
+      sub: l.kind === 'transit' ? names[0].from : `${l.kind === 'walk' ? 'walk' : 'ride'} ${Math.round(l.dur / 60)}′ to ${names[0].to || 'the station'}`,
+      track: l.kind === 'transit' ? boardAt(l) : boardAt(nextRide(0)), then: l.kind !== 'transit' };
   } else if (cur === -1) {
     next = { at: null, title: `Arrived at ${j.to.name}`, sub: '' };
   } else {
     const l = legs[cur];
     if (l.kind === 'transit' && now >= +l.dep) {
-      next = { at: l.arr, title: `Get off at ${names[cur].to}`, sub: after(cur), getOff: cur };
+      next = { at: l.arr, title: `Get off at ${names[cur].to}`, sub: after(cur), getOff: cur, track: boardAt(nextRide(cur)), then: true };
     } else {
       const t = l.kind === 'transit' ? cur : transit.find(k => k > cur);
       next = t != null
-        ? { at: legs[t].dep, title: `Board the ${legLabel(legs[t])}`, sub: [names[t].from, legs[t].live?.platform && `track ${legs[t].live.platform}`].filter(Boolean).join(' · ') }
+        ? { at: legs[t].dep, title: `Board the ${legLabel(legs[t])}`, sub: names[t].from, track: boardAt(legs[t]), then: t > cur }
         : { at: j.end, title: `Arrive at ${j.to.name}`, sub: `${legLabel(l)} ${Math.round((j.end - now) / MIN)}′` };
     }
   }
@@ -1944,6 +1951,14 @@ function rideStripHTML(j, now) {
   return `<div class="strip r-strip">${segs}</div><div class="r-strip-lbl"><i style="left:0">${now < +j.start ? fmtTime(j.start) : 'now'}</i>${hours.join('')}<i style="right:0">${fmtTime(j.end)}</i></div>`;
 }
 
+// Big enough to read while walking: where the next ride leaves from.
+function rideTrackHTML(next) {
+  const t = next.track;
+  if (!t) return '';
+  const label = t.changed ? `${t.what} changed` : next.then ? `then ${t.what.toLowerCase()}` : t.what;
+  return `<div class="r-trk${t.changed ? ' changed' : ''}"><small>${esc(label)}</small><b>${esc(t.at)}</b></div>`;
+}
+
 function changeCardHTML(ch, k, fb) {
   const scale = Math.max(SPARE_SCALE_MIN * 60, ch.walk + Math.max(ch.spare, 0));
   const walkW = (ch.walk / scale) * 100;
@@ -1961,7 +1976,7 @@ function changeCardHTML(ch, k, fb) {
       <b class="${late >= 15 ? 'bad' : 'tight'}">${late >= 0 ? '+' : ''}${late}′</b></button>`;
   }
   return `<div class="r-card ${l.cancelled ? 'bad' : spareCls(ch.spare)}">
-    <div class="r-card-head"><span><b>${fmtTime(ch.leg.dep)} ${esc(ch.place || '')}</b> → ${pill(l.route)}${delay}${l.live?.platform ? ` <span class="trk">${esc(l.live.platform)}</span>` : ''}</span><b class="r-spare">${spareTxt}</b></div>
+    <div class="r-card-head"><span><b>${fmtTime(ch.leg.dep)} ${esc(ch.place || '')}</b> → ${pill(l.route)}${delay}${boardAt(l) ? ` <span class="trk${l.live.platformChanged ? ' changed' : ''}">${esc(`${boardAt(l).what} ${l.live.platform}`)}</span>` : ''}</span><b class="r-spare">${spareTxt}</b></div>
     <div class="r-bar"><span class="walk" style="width:${walkW.toFixed(1)}%"></span><span class="spare" style="width:${spareW.toFixed(1)}%"></span></div>
     <div class="r-card-foot">${plan}</div></div>`;
 }
@@ -2003,7 +2018,7 @@ function renderRide(j) {
     ? '<button type="button" class="r-notify" data-action="ride-notify">Allow alerts</button>' : '';
   $('#ride').innerHTML = `<div class="r-top"><span>${esc(on)} · ${fmtTime(new Date(now))} · arrive ${arrive}</span>
       ${live ? '<span class="r-live"><span class="live-dot"></span>live</span>' : '<span class="r-live muted">timetable</span>'}</div>
-    <div class="r-next">${countdownHTML(m.next.at, now)}<div><b>${esc(m.next.title)}</b>${m.next.sub ? `<small>${esc(m.next.sub)}</small>` : ''}</div></div>
+    <div class="r-next">${countdownHTML(m.next.at, now)}<div><b>${esc(m.next.title)}</b>${m.next.sub ? `<small>${esc(m.next.sub)}</small>` : ''}</div>${rideTrackHTML(m.next)}</div>
     ${rideStripHTML(j, now)}
     ${rideState.change ? `<div class="r-alert">${esc(rideState.change)}</div>` : ''}
     ${lost ? `<div class="r-alert bad"><b>${lost.ch.leg.cancelled ? `The ${esc(lost.ch.leg.route.display_name)} is cancelled` : `You'll miss the ${esc(lost.ch.leg.route.display_name)} at ${esc(lost.ch.place)}`}</b>
@@ -2020,6 +2035,7 @@ function maybeAlert(j, m, now, lost) {
   const facts = {
     key: j.key,
     action: m.next.title,
+    track: m.next.track ? `${m.next.track.what} ${m.next.track.at}` : null,
     spare: ch ? Math.round(ch.spare / 60) : null,
     arrive: Math.round((lost?.fb?.end || j.end) / MIN),
     cancelled: j.cancelled,
@@ -2030,7 +2046,7 @@ function maybeAlert(j, m, now, lost) {
   if (m.next.getOff != null && m.next.at - now <= GET_OFF_WARN && !rideState.warned.has(`off${m.next.getOff}@${j.key}`)) {
     rideState.warned.add(`off${m.next.getOff}@${j.key}`);
     const planB = lost?.fb && lost.ch.a === m.next.getOff;
-    notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}` : '');
+    notify(m.next.title.replace('Get off', 'Get off soon'), planB ? `Then plan B: arrive ${fmtTime(lost.fb.end)}` : m.next.sub ? `Then ${m.next.sub}${m.next.track ? `, ${m.next.track.what.toLowerCase()} ${m.next.track.at}` : ''}` : '');
   }
   if (!old || old.key !== facts.key) return;
   const msgs = [];
@@ -2042,7 +2058,8 @@ function maybeAlert(j, m, now, lost) {
   if (!facts.lost && ch && old.spare != null && facts.spare !== old.spare && (Math.abs(facts.spare - old.spare) >= 3 || (facts.spare < 2) !== (old.spare < 2))) {
     msgs.push(`Spare at ${ch.place} ${old.spare}′ → ${facts.spare}′${facts.spare < 2 ? ': tight!' : ''}`);
   }
-  if (facts.action !== old.action) msgs.unshift(`Next: ${facts.action}`);
+  if (facts.action !== old.action) msgs.unshift(`Next: ${facts.action}${facts.track ? `, ${facts.track.toLowerCase()}` : ''}`);
+  else if (facts.track && old.track && facts.track !== old.track) msgs.unshift(`Now from ${facts.track.toLowerCase()} (was ${old.track.toLowerCase()})`);
   if (!msgs.length) return;
   rideState.change = `${fmtTime(new Date(now))} · ${msgs.join(' · ')}`;
   notify(msgs[0], msgs.slice(1).join(' · ') || m.next.sub || '');

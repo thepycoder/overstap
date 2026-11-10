@@ -547,7 +547,13 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .r-next { display: flex; align-items: center; gap: 14px; margin: 4px 0 2px; }
 .r-next b { font-size: 18px; }
 .r-next small { display: block; color: var(--muted); font-size: 15px; margin-top: 2px; }
-.r-count { display: flex; align-items: baseline; gap: 3px; min-width: 76px; }
+.r-next > div:not([class]) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.r-trk { margin-left: auto; flex: none; min-width: 64px; max-width: 92px; padding: 4px 8px 6px; border: 2.5px solid var(--ink); border-radius: 10px; text-align: center; line-height: 1; }
+.r-trk small { display: block; color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.r-trk b { display: block; font-size: 34px; font-weight: 800; margin-top: 3px; }
+.r-trk.changed { border-color: var(--delay); }
+.r-trk.changed b, .r-trk.changed small { color: var(--delay); }
+.r-count { display: flex; flex: none; align-items: baseline; gap: 3px; min-width: 76px; }
 .r-count b { font-size: 64px; line-height: .9; font-weight: 800; letter-spacing: -2px; }
 .r-count span { font-size: 18px; font-weight: 700; margin-right: 4px; }
 .r-count.done { font-size: 48px; color: var(--ok); }

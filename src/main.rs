@@ -7,6 +7,7 @@
 //! 4. policy building: contingency branches on delay events
 
 mod gtfs_rt;
+mod irail;
 mod lastmile;
 mod model;
 mod motis;
