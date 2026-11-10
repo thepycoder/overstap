@@ -315,7 +315,11 @@ fn parked(c: &Client, r: &Request, at: (f64, f64)) -> Result<Vec<Journey>> {
 /// Seconds spent on shared bikes, after the last transit leg (the leg MOTIS's own
 /// `max_post_transit_s` caps for its rental plans).
 fn rental_s(it: &Itinerary) -> i64 {
-    let after = it.legs.iter().rposition(|l| l.is_transit()).map_or(0, |i| i + 1);
+    let after = it
+        .legs
+        .iter()
+        .rposition(|l| l.is_transit())
+        .map_or(0, |i| i + 1);
     it.legs[after..]
         .iter()
         .filter(|l| l.mode == "RENTAL")
