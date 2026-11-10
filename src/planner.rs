@@ -312,6 +312,17 @@ fn parked(c: &Client, r: &Request, at: (f64, f64)) -> Result<Vec<Journey>> {
     Ok(out)
 }
 
+/// Seconds spent on shared bikes, after the last transit leg (the leg MOTIS's own
+/// `max_post_transit_s` caps for its rental plans).
+fn rental_s(it: &Itinerary) -> i64 {
+    let after = it.legs.iter().rposition(|l| l.is_transit()).map_or(0, |i| i + 1);
+    it.legs[after..]
+        .iter()
+        .filter(|l| l.mode == "RENTAL")
+        .map(|l| l.duration)
+        .sum()
+}
+
 /// Shared bikes: MOTIS's rental plans (hub-only providers corrected), walking plans,
 /// and round-trip station bikes priced as a tour from every alighting stop.
 fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
@@ -355,9 +366,10 @@ fn shared(c: &Client, r: &Request) -> Result<Vec<Journey>> {
     }
     for it in walk {
         // A round trip is a hassle (you have to come back for it): only worth it when it
-        // gets you there clearly earlier than walking.
+        // gets you there clearly earlier than walking, and the ride is within your limit.
         let worth = |c: &lastmile::Candidate| {
             c.arrive() + Duration::minutes(TOUR_MIN_GAIN_MIN) <= it.end_time
+                && rental_s(&c.it) <= i64::from(r.max_bike_min) * 60
         };
         if let Some(cand) = lastmile::tour_option(&s, &it, dest)?.filter(worth) {
             out.push(Journey {
@@ -415,6 +427,22 @@ mod tests {
         assert!(bike_here(&r));
         r.from = "50.8453,4.3571".into();
         assert!(!bike_here(&r));
+    }
+
+    #[test]
+    fn rental_time_counts_only_the_last_mile() {
+        let ride = |mins: i64| Leg {
+            duration: mins * 60,
+            ..leg("RENTAL", None)
+        };
+        let it = Itinerary::from_legs(vec![
+            ride(10),
+            leg("REGIONAL_RAIL", Some("t1")),
+            leg("WALK", None),
+            ride(29),
+        ]);
+        assert_eq!(rental_s(&it), 29 * 60);
+        assert_eq!(rental_s(&Itinerary::from_legs(vec![ride(12)])), 12 * 60);
     }
 
     #[test]

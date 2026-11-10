@@ -110,8 +110,8 @@ body:not([data-mode="results"]) .viewbar,
 body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 
 /* ---------- plan form ---------- */
-.plan { display: flex; align-items: center; gap: 10px; }
-.endpoints { position: relative; flex: 1 1 auto; min-width: 260px; max-width: 860px; display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.plan { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.endpoints { position: relative; flex: 1 1 320px; min-width: 260px; max-width: 860px; display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
 .field { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 14px; }
 .field input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; padding: 10px 0; outline: none; font-size: 16px; }
 .field input::placeholder { color: var(--faint); }
@@ -133,10 +133,14 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .suggest small { color: var(--muted); }
 .suggest .s-empty { color: var(--muted); cursor: default; }
 
-.when { display: flex; gap: 8px; flex: none; }
+/* All settings in one row that scrolls sideways when it doesn't fit (narrow phones, or next
+   to the tabs on a laptop), instead of pushing the last menus off screen or under the tabs. */
+.when { display: flex; gap: 8px; flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.when::-webkit-scrollbar { display: none; }
 .when select, .when input { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 9px 10px; }
 .when select[hidden] { display: none; }
 #bike-mode { max-width: 10.5em; text-overflow: ellipsis; }
+.when > * { flex: none; }
 .bikeat { margin-top: 8px; max-width: 860px; display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
 .bikeat[hidden] { display: none; }
 .bike-ico { display: grid; color: var(--accent); }
@@ -487,12 +491,17 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 /* ---------- small screens ---------- */
 @media (max-width: 860px) {
   .top {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    /* The tabs may shrink (and scroll) so the header never gets wider than the screen:
+       a wider grid pushed the right end of every row, menus included, off a narrow phone. */
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto;
     grid-template-areas: "plan plan plan" "tabs saved view" "notice notice notice";
     column-gap: 8px;
     padding-bottom: 10px;
   }
   .tabs, .viewbar, .saved { margin-top: 10px; }
+  .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: none; }
   .saved-next { max-width: none; flex: 1; }
   .saved-next .st { display: none; }
   .saved-menu { left: 12px; right: 12px; width: auto; }
