@@ -536,6 +536,11 @@ showed every stop as *scheduled departure + delay at the boarding stop* (Lier 17
    `catchUp {at, shortS}` and a note. They show as "⚠ N′ short" / "If it makes up N min", and
    (as `atRisk` routes) never hide others. Plan B searches don't do this: plan B should be a
    sure thing.
+   On the timetable, changing at Herentals or a stop later at Lier (same two trains) is a tie,
+   and MOTIS returns one of them. So a short change is first moved to whichever stop both
+   trains share with the most live slack (`rechange`, `overshoot::best_change`). Without
+   this, the Lier route that was 3′ short live (L 18:39, IC 18:40) was dropped because MOTIS
+   had returned the Herentals change, 7′ short.
 
 **Consequences.** One more MOTIS call per search. The 5-min threshold and "decide at the stop"
 don't use how often trains actually catch up. Learning catch-up per stretch from the RT logger

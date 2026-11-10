@@ -5,7 +5,7 @@
 //! reads them in MOTIS's own shape.
 
 use crate::lastmile::{self, Fix, Street};
-use crate::motis::{Client, Itinerary, PlanQuery};
+use crate::motis::{Client, Itinerary, Leg, PlanQuery};
 use anyhow::{bail, Result};
 use chrono::{DateTime, Duration, Utc};
 use clap::ValueEnum;
@@ -382,10 +382,12 @@ fn catch_up(c: &Client, r: &Request) -> Vec<Journey> {
             return vec![];
         }
     };
+    let mut trips = std::collections::HashMap::new();
     p.itineraries
         .into_iter()
         .filter(|it| !it.legs.iter().any(|l| l.cancelled == Some(true)))
         .filter_map(|it| {
+            let it = rechange(c, it, &mut trips);
             let cu = short_change(&it)?;
             (cu.short_s <= CATCH_UP_MAX_MIN * 60).then(|| Journey {
                 label: Some("If the train catches up".into()),
@@ -399,6 +401,76 @@ fn catch_up(c: &Client, r: &Request) -> Vec<Journey> {
             })
         })
         .collect()
+}
+
+/// On the timetable, changing at Herentals or one stop later at Lier (same two trains) is a tie
+/// and MOTIS returns one of them; on live times the later stop can be the one that works. For
+/// each short change between two trains that share more stops, move it to the shared stop
+/// with the most slack. `trips` caches MOTIS trips by id.
+fn rechange(
+    c: &Client,
+    mut it: Itinerary,
+    trips: &mut std::collections::HashMap<String, Option<Leg>>,
+) -> Itinerary {
+    let rides: Vec<usize> = (0..it.legs.len())
+        .filter(|&k| it.legs[k].is_transit())
+        .collect();
+    for w in rides.windows(2) {
+        let (ia, ib) = (w[0], w[1]);
+        // Only a change within one station: nothing between the rides but one transfer walk.
+        let between = &it.legs[ia + 1..ib];
+        if between.len() > 1 || between.iter().any(|l| l.mode != "WALK") {
+            continue;
+        }
+        let walk: i64 = between.iter().map(|l| l.duration).sum();
+        let (a, b) = (&it.legs[ia], &it.legs[ib]);
+        let slack = (b.start_time - a.end_time).num_seconds() - walk;
+        if slack >= 0 {
+            continue;
+        }
+        let mut trip = |id: &Option<String>| -> Option<Leg> {
+            let id = id.clone()?;
+            trips
+                .entry(id.clone())
+                .or_insert_with(|| c.trip(&id).ok().and_then(|t| t.legs.into_iter().next()))
+                .clone()
+        };
+        let (Some(ta), Some(tb)) = (trip(&a.trip_id), trip(&b.trip_id)) else {
+            continue;
+        };
+        let stop = |t: &Leg, p: &crate::motis::Place| {
+            crate::overshoot::stop_index(t, p.stop_id.as_deref()?)
+        };
+        let (Some(board), Some(alight)) = (stop(&ta, &a.from), stop(&tb, &b.to)) else {
+            continue;
+        };
+        let Some((i, j, best)) = crate::overshoot::best_change(&ta, board, &tb, alight, walk)
+        else {
+            continue;
+        };
+        if best <= slack {
+            continue;
+        }
+        let (Some(na), Some(nb)) = (
+            crate::overshoot::slice(&ta, board, i),
+            crate::overshoot::slice(&tb, j, alight),
+        ) else {
+            continue;
+        };
+        if let Some(t) = it.legs.get_mut(ia + 1).filter(|_| ib == ia + 2) {
+            t.from = na.to.clone();
+            t.to = na.to.clone();
+            t.start_time = na.end_time;
+            t.end_time = na.end_time + Duration::seconds(walk);
+            t.scheduled_start_time = t.start_time;
+            t.scheduled_end_time = t.end_time;
+            t.leg_geometry = None;
+            t.distance = None;
+        }
+        it.legs[ia] = na;
+        it.legs[ib] = nb;
+    }
+    Itinerary::from_legs(it.legs)
 }
 
 fn folding(c: &Client, r: &Request) -> Result<(Vec<Journey>, Vec<Itinerary>)> {
