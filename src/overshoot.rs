@@ -161,7 +161,6 @@ pub fn run(
 
 // ---------- staying on: a stretch of a trip as a leg of its own (ride mode's plan B) ----------
 
-
 /// A trip's stops in order: origin, intermediate stops, terminus.
 pub fn trip_places(trip: &Leg) -> Vec<&Place> {
     std::iter::once(&trip.from)
@@ -180,10 +179,7 @@ fn sq_dist(a: (f64, f64), b: (f64, f64)) -> f64 {
 /// Stop ids match exactly; otherwise the nearest stop within ~300 m.
 pub fn stop_index(trip: &Leg, at: &str) -> Option<usize> {
     let places = trip_places(trip);
-    if let Some(i) = places
-        .iter()
-        .position(|p| p.stop_id.as_deref() == Some(at))
-    {
+    if let Some(i) = places.iter().position(|p| p.stop_id.as_deref() == Some(at)) {
         return Some(i);
     }
     let here = crate::planner::parse_coord(at)?;
@@ -259,7 +255,11 @@ fn decode_polyline(s: &str, precision: u32) -> Vec<(f64, f64)> {
                     break;
                 }
             }
-            *x = if result & 1 == 1 { !(result >> 1) } else { result >> 1 };
+            *x = if result & 1 == 1 {
+                !(result >> 1)
+            } else {
+                result >> 1
+            };
         }
         lat += v[0];
         lng += v[1];
@@ -314,9 +314,27 @@ mod tests {
             trip_id: Some("L".into()),
             from: stop("Mol", "mol", 51.0, None, Some("2026-11-10T16:05:00Z")),
             intermediate_stops: vec![
-                stop("Herentals", "her", 51.2, Some("2026-11-10T16:23:00Z"), Some("2026-11-10T16:24:00Z")),
-                stop("Lier", "lie", 51.4, Some("2026-11-10T16:35:00Z"), Some("2026-11-10T16:36:00Z")),
-                stop("Berchem", "ber", 51.6, Some("2026-11-10T16:45:00Z"), Some("2026-11-10T16:47:00Z")),
+                stop(
+                    "Herentals",
+                    "her",
+                    51.2,
+                    Some("2026-11-10T16:23:00Z"),
+                    Some("2026-11-10T16:24:00Z"),
+                ),
+                stop(
+                    "Lier",
+                    "lie",
+                    51.4,
+                    Some("2026-11-10T16:35:00Z"),
+                    Some("2026-11-10T16:36:00Z"),
+                ),
+                stop(
+                    "Berchem",
+                    "ber",
+                    51.6,
+                    Some("2026-11-10T16:45:00Z"),
+                    Some("2026-11-10T16:47:00Z"),
+                ),
             ],
             to: stop("Centraal", "cen", 51.8, Some("2026-11-10T16:51:00Z"), None),
             leg_geometry: Some(Geometry {
@@ -356,11 +374,18 @@ mod tests {
     fn slices_a_stretch_of_the_trip() {
         let t = trip();
         let l = slice(&t, 0, 3).unwrap();
-        assert_eq!((l.from.name.as_str(), l.to.name.as_str()), ("Mol", "Berchem"));
+        assert_eq!(
+            (l.from.name.as_str(), l.to.name.as_str()),
+            ("Mol", "Berchem")
+        );
         assert_eq!(l.start_time.to_rfc3339(), "2026-11-10T16:05:00+00:00");
         assert_eq!(l.end_time.to_rfc3339(), "2026-11-10T16:45:00+00:00");
         assert_eq!(l.duration, 40 * 60);
-        let names: Vec<_> = l.intermediate_stops.iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<_> = l
+            .intermediate_stops
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names, ["Herentals", "Lier"]);
         let g = decode_polyline(&l.leg_geometry.unwrap().points, 6);
         assert!((g[0].0 - 51.0).abs() < 1e-6 && (g.last().unwrap().0 - 51.6).abs() < 1e-6);
