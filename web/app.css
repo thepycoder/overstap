@@ -343,6 +343,9 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .d-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .back { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted); padding: 4px 6px 4px 0; font-weight: 550; }
 .back:hover { color: var(--ink); }
+/* Back to where you came from (the ride, the route you were comparing against): a clear target. */
+.back.trail { color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 11px 6px 8px; min-height: 36px; }
+.d-peek { margin: 0 0 10px; padding: 8px 11px; border-radius: 10px; background: var(--accent-soft); font-size: 13.5px; }
 .save-btn { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 13px; font-weight: 600; font-size: 13.5px; }
 .save-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .save-btn[aria-pressed="true"] .i { fill: currentColor; }
@@ -481,6 +484,12 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
 .pin.from { background: var(--from); }
 .pin.to { background: #1f2328; border-radius: 4px; }
 .pin.bikeAt { background: var(--accent); border-radius: 4px; }
+/* You, on the map. */
+.here-dot { width: 16px; height: 16px; border-radius: 50%; background: #1a73e8; border: 3px solid #fff; box-sizing: border-box; box-shadow: 0 0 0 1px rgba(0, 0, 0, .15), 0 1px 4px rgba(0, 0, 0, .35); }
+.here-ring { fill: #1a73e8; fill-opacity: .12; stroke: #1a73e8; stroke-opacity: .35; }
+.here-ctl a { display: flex !important; align-items: center; justify-content: center; color: #1a73e8; }
+.here-ctl a .i { width: 18px; height: 18px; }
+.here-ctl.off a { color: #8a8f98; }
 .leaflet-container { font: inherit; }
 .leaflet-tile-pane { filter: saturate(.75) contrast(.95); }
 .stop-tip { font-weight: 600; }
@@ -501,7 +510,10 @@ body.hdr-hidden[data-mode="results"] .hdr-pill { display: flex; }
     padding-bottom: 10px;
   }
   .tabs, .viewbar, .saved { margin-top: 10px; }
-  .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .tabs { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  /* While the search is open, the timetable's controls ("+N slower", refresh) step aside:
+     the settings row above and the tabs get the whole width. */
+  body.editing .viewbar { display: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs button { flex: none; }
   .saved-next { max-width: none; flex: 1; }

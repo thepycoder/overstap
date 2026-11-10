@@ -435,3 +435,29 @@ platform at every stop well ahead (NMBS's own data, changes included).
 tracks. A change iRail knows about (`platforminfo.normal = 0`, no original given) isn't flagged yet. De Lijn
 platforms depend on `platform_code` in its GTFS (not checked).
 
+## ADR-023 — Alternatives are looked at, not taken; Back returns to where you were
+
+**Context.** In a route's Variants view, "Use this route" replaced the open route, and Back then
+led to the timetable; in ride mode, tapping a change's "If missed: …" switched the ride to plan
+B at once. The rider wants to inspect an alternative without committing to it, and get back.
+
+**Decision.**
+- Opening an alternative pushes a snapshot of where you were (open route, saved route or ride;
+  Stops/Variants view; picked variant; scroll) onto `state.trail`. The detail's Back button is
+  labelled with that place ("08:27 route", "Ride") and restores it exactly; with an empty trail it
+  behaves as before (Schedule / Back).
+- Variants: the card's button is "Open this route" (it only opens it).
+- Ride mode: "If missed: …" opens plan B as a route (the ride so far + plan B, `state.peek`) with
+  "Take plan B" and Back → Ride; the ride is untouched until you take it. The red alert's
+  "Take plan B" (a change you will miss) still switches at once. "Route & map" also returns to
+  the ride.
+- A new search, opening a route from the timetable or the saved list, and starting or ending a
+  ride clear the trail.
+
+**Consequences.** The trail lives in memory only: a reload lands on the route or ride in the URL
+without it, and a plan B being looked at isn't in the URL (the ride is). Ride alerts pause while
+you look at plan B (ride mode isn't rendering). The phone's back button isn't wired to the trail yet.
+
+Also decided (user, 2026-11-10): **Shared bikes is the default tab**, then Folding bike, then On
+foot. Links without `tab=` now open Shared bikes.
+

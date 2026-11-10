@@ -85,6 +85,10 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
 - [x] Ride mode v0: next move + countdown, strip to arrival, spare bars per change, plan B per change, bikes at pickup, alerts on changed facts (ADR-016)
 - [ ] Ride mode: GPS position instead of the clock (detect getting off early / overshooting)
+- [x] Your position on the map (dot + accuracy, locate button; asks permission once) and Shared bikes as the default tab
+- [x] Alternatives are looked at, not taken: variants and plan B open with a labelled Back to where you were (ADR-023)
+- [ ] Phone's own back button for that trail (needs `pushState` entries that don't fight the `replaceState` hash and `hashchange` replans)
+- [ ] Mobile header: check on iOS Safari that "+N slower" no longer collides with the settings row (couldn't reproduce in Chromium)
 - [ ] Ride mode: plan B for the last mile (no bikes → other operator/walk), 'Something's wrong' flows from the canvas
 - [ ] Log GBFS station stock (predict empty stations)
 - [ ] Post-trip review: user-reported delays for vehicles without live data

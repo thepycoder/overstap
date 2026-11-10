@@ -24,11 +24,11 @@ const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria
 
 // Ways of travelling around public transport; each is its own search (see src/planner.rs).
 const TABS = [
-  { id: 'folding', name: 'Folding bike', icon: 'bike', title: 'Your folding bike on both ends, and on board' },
   { id: 'shared', name: 'Shared bikes', icon: 'share', title: 'Blue-bike, Donkey, Velo, Hoppy… for the first and last mile' },
+  { id: 'folding', name: 'Folding bike', icon: 'bike', title: 'Your folding bike on both ends, and on board' },
   { id: 'foot', name: 'On foot', icon: 'walk', title: 'Public transport and walking' },
 ];
-const DEFAULT_TAB = 'folding';
+const DEFAULT_TAB = 'shared';
 
 // Timetable geometry. ppm = pixels per minute along the time axis.
 const ZOOMS = [2, 3, 4, 5, 6, 8, 10, 13, 16];
@@ -100,6 +100,11 @@ const state = {
   showAll: false,
   savedId: null,
   rideId: null,
+  // An alternative you're looking at without committing to it: plan B while riding ({ j, k }).
+  peek: null,
+  // Where you came from when you opened an alternative (a variant, plan B, the ride's route):
+  // Back returns there, last first. Each entry is a snapshot(); a new search or route clears it.
+  trail: [],
   pendingRoute: null,
   editing: false,
   ppm: { h: 6, v: 4 },
@@ -430,7 +435,7 @@ async function plan() {
   writeHash();
   const seq = ++state.seq;
   Object.assign(state, {
-    journeys: [], byKey: new Map(), selected: null, hot: null, warnings: [],
+    journeys: [], byKey: new Map(), selected: null, hot: null, warnings: [], peek: null, trail: [],
     paging: { later: 'idle', earlier: state.timeMode === 'now' ? 'off' : 'idle' },
   });
   state.sched.anchor = null;
@@ -628,6 +633,7 @@ function nextSaved() {
 }
 
 function currentDetail() {
+  if (state.peek) return state.peek.j;
   if (state.savedId) {
     const entry = savedEntries().find(s => s.id === state.savedId);
     return entry ? savedJourney(entry) : null;
@@ -637,6 +643,8 @@ function currentDetail() {
 
 function openSaved(id) {
   state.rideId = null;
+  state.peek = null;
+  state.trail = [];
   state.savedId = id;
   state.variantPick = null;
   state.editing = false;
@@ -769,6 +777,92 @@ function drawJourney(j, { fit = true } = {}) {
     map.fitBounds(L.latLngBounds(points), { paddingTopLeft: [panel ? 450 : pad, pad], paddingBottomRight: [pad, pad], maxZoom: 16 });
   }
 }
+
+// ---------- where you are ----------
+//
+// A dot (and its accuracy circle) on the map while the map is in sight. Watching starts the
+// browser's permission prompt the first time; once refused, the locate button says how to allow it.
+
+const here = { dot: null, ring: null, watch: null, fix: null, centred: false, denied: false, follow: false };
+
+function showHere(pos) {
+  const pt = [pos.coords.latitude, pos.coords.longitude];
+  const acc = Math.min(pos.coords.accuracy || 0, 2000);
+  here.fix = { coords: pt, at: Date.now() };
+  here.denied = false;
+  if (!here.dot) {
+    here.ring = L.circle(pt, { radius: acc, className: 'here-ring', weight: 1, interactive: false }).addTo(map);
+    here.dot = L.marker(pt, {
+      interactive: false, keyboard: false, zIndexOffset: 900,
+      icon: L.divIcon({ className: '', html: '<div class="here-dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+    }).addTo(map);
+  } else {
+    here.dot.setLatLng(pt);
+    here.ring.setLatLng(pt).setRadius(acc);
+  }
+  // Centre on you once before a search (nothing else to show), and whenever you ask.
+  if (here.follow || (!here.centred && document.body.dataset.mode === 'idle')) map.setView(pt, Math.max(map.getZoom(), 14));
+  here.follow = false;
+  here.centred = true;
+  locateCtl?.classList.remove('off');
+}
+
+function hereError(err) {
+  if (err.code === 1) { here.denied = true; watchHere(false); locateCtl?.classList.add('off'); }
+  if (here.follow) {
+    here.follow = false;
+    alert(err.code === 1
+      ? 'overstap may not use your location. Allow it in your browser\'s site settings (the icon left of the address), then tap again.'
+      : `Could not get your location: ${err.message}`);
+  }
+}
+
+function watchHere(on) {
+  if (!navigator.geolocation) return;
+  if (on && here.watch == null && !here.denied) {
+    here.watch = navigator.geolocation.watchPosition(showHere, hereError, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  } else if (!on && here.watch != null) {
+    navigator.geolocation.clearWatch(here.watch);
+    here.watch = null;
+  }
+}
+
+// Only while the map shows (not under the timetable or ride mode, not in a background tab).
+const mapInSight = () => !document.hidden && document.body.dataset.stage === 'map' && map.getContainer().offsetParent !== null;
+
+let locateCtl = null;
+const LocateControl = L.Control.extend({
+  options: { position: 'topright' },
+  onAdd() {
+    const box = L.DomUtil.create('div', 'leaflet-bar here-ctl');
+    const btn = L.DomUtil.create('a', '', box);
+    btn.href = '#';
+    btn.setAttribute('role', 'button');
+    btn.title = 'Show where I am';
+    btn.setAttribute('aria-label', 'Show where I am');
+    btn.innerHTML = icon('locate');
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(btn, 'click', e => {
+      L.DomEvent.preventDefault(e);
+      if (!navigator.geolocation) return alert('Location is not available in this browser.');
+      here.follow = true;
+      if (here.fix && Date.now() - here.fix.at < 60000) { map.setView(here.fix.coords, Math.max(map.getZoom(), 15)); here.follow = false; }
+      // Asks again after a refusal: some browsers re-prompt, the rest land in hereError.
+      navigator.geolocation.getCurrentPosition(showHere, hereError, { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 });
+      here.denied = false;
+      watchHere(mapInSight());
+    });
+    locateCtl = box;
+    return box;
+  },
+});
+new LocateControl().addTo(map);
+
+// A site that was refused before isn't asked again on its own; a later "allow" starts the dot.
+navigator.permissions?.query({ name: 'geolocation' }).then(p => {
+  if (p.state === 'denied') { here.denied = true; watchHere(false); locateCtl?.classList.add('off'); }
+  p.onchange = () => { here.denied = p.state === 'denied'; watchHere(!here.denied && mapInSight()); };
+}).catch(() => {});
 
 // ---------- endpoints & autocomplete ----------
 
@@ -968,7 +1062,7 @@ function legTitle(l, nm, j) {
 
 // The stage shows the timetable for results, and the map before a search or for a route's details.
 function render() {
-  const riding = currentRide();
+  const riding = state.peek ? null : currentRide();
   const open = riding || currentDetail();
   const mode = riding ? 'ride' : open ? 'detail' : !state.from || !state.to ? 'idle' : 'results';
   const stage = mode === 'results' ? 'schedule' : 'map';
@@ -990,6 +1084,7 @@ function render() {
   }
   if (stage === 'schedule') renderSchedule();
   else requestAnimationFrame(() => { map.invalidateSize(); drawJourney(open); });
+  requestAnimationFrame(() => watchHere(mapInSight()));
 }
 
 // The search bar slides away while you scroll through the timetable, so it can use the whole
@@ -1081,7 +1176,7 @@ function renderIntro() {
   const trips = store.get('trips', []);
   const saved = savedJourneys();
   $('#intro').innerHTML = `<h2>overstap</h2>
-    <p>Pick a start and destination above. <b>Folding bike</b> rides to the station, takes the bike on board and rides the last stretch; <b>Shared bikes</b> adds Blue-bike, Donkey, Velo and Hoppy, with their parking rules; <b>On foot</b> is public transport and walking. Tell it where <b>your own bike</b> is (with you, or parked at a station) and Shared bikes and On foot also use it for the stretch it can reach.</p>
+    <p>Pick a start and destination above. <b>Shared bikes</b> adds Blue-bike, Donkey, Velo and Hoppy, with their parking rules; <b>Folding bike</b> rides to the station, takes the bike on board and rides the last stretch; <b>On foot</b> is public transport and walking. Tell it where <b>your own bike</b> is (with you, or parked at a station) and Shared bikes and On foot also use it for the stretch it can reach.</p>
     ${saved.length ? `<div class="group-title">Saved routes</div><div class="saved-list">${saved.map(savedItemHTML).join('')}</div>` : ''}
     ${trips.length ? `<div class="group-title">Recent trips</div><div class="trips">${trips.map((t, k) =>
       `<button type="button" class="trip" data-trip="${k}">${icon('history')}<span>${esc(t.from.name)} → ${esc(t.to.name)}</span></button>`).join('')}</div>` : ''}`;
@@ -1357,10 +1452,12 @@ function setHot(key) {
   $('#schedule').classList.toggle('has-hot', !!key);
 }
 
-function openDetail(key) {
+function openDetail(key, { trail = [] } = {}) {
   if (!state.byKey.has(key)) return;
   state.selected = key;
   state.savedId = null;
+  state.peek = null;
+  state.trail = trail;
   state.variantPick = null;
   state.editing = false;
   setHot(null);
@@ -1462,7 +1559,13 @@ function renderDetail(j) {
   const liveNote = hasLive
     ? `<span class="live-dot"></span>Live times · updated ${fmtTime(j.liveAt)}`
     : 'Timetable times · live times appear closer to departure';
-  const back = `<button type="button" class="back" data-action="back">${icon('back')} ${j.saved ? 'Back' : 'Schedule'}</button>`;
+  const prev = state.trail.at(-1);
+  const back = `<button type="button" class="back${prev ? ' trail' : ''}" data-action="back">${icon('back')} ${esc(prev ? prev.label : j.saved ? 'Back' : 'Schedule')}</button>`;
+  const peek = state.peek;
+  const btns = peek
+    ? `<button type="button" class="ride-btn" data-action="peek-take">${icon('train')} Take plan B</button>`
+    : `<button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
+      <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button>`;
   const variants = braid.strands.length + braid.ghosts.length;
   const views = `<div class="seg d-view" role="group" aria-label="Show this route as">
       <button type="button" data-show="list" aria-pressed="${!braided}">Stops</button>
@@ -1475,8 +1578,8 @@ function renderDetail(j) {
   el.dataset.shown = j.key;
   const pick = braided && [...braid.strands, ...braid.ghosts].find(s => s.id === state.variantPick);
   el.innerHTML = `<div class="d-top">${back}
-      <span class="d-btns"><button type="button" class="save-btn" data-action="toggle-save" aria-pressed="${saved}">${icon('bookmark')} ${saved ? 'Saved' : 'Save'}</button>
-      <button type="button" class="ride-btn" data-action="ride-start">${icon('train')} Ride</button></span></div>
+      <span class="d-btns">${btns}</span></div>
+    ${peek ? `<p class="d-peek">${esc(peek.note)} Your ride stays as it is until you take this.</p>` : ''}
     <div class="d-head">
       ${j.saved ? `<div class="d-route">${esc(dayLabel(j.start))}${esc(j.from.name)} → ${esc(j.to.name)}</div>` : ''}
       <div class="card-head">${timesHTML(j, f)}<span class="dur">${fmtDur(j.duration)}</span></div>
@@ -1827,7 +1930,7 @@ function pickHTML(j, p) {
     ${p.join ? `<p class="p-meet">Then on ${yours(p.join)}</p>` : ''}
     ${note ? `<p class="p-note">${note}</p>` : ''}
     <div class="p-cmp"><span>This</span>${stripHTML(o, range)}<span>Yours</span>${stripHTML(j, range)}</div>
-    <button type="button" class="p-use" data-variant="${esc(o.key)}">Use this route</button></section>`;
+    <button type="button" class="p-use" data-variant="${esc(o.key)}">Open this route</button></section>`;
 }
 
 // Shows a tapped strand or ghost in its card (null closes it), keeping the block in sight above it.
@@ -2123,6 +2226,8 @@ function startRide(j) {
   moveBikeAlong(j);
   state.rideId = j.key;
   state.savedId = null;
+  state.peek = null;
+  state.trail = [];
   Object.assign(rideState, { facts: null, change: null, extras: null, extrasKey: '' });
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(renderRideSoon);
   writeHash();
@@ -2131,25 +2236,77 @@ function startRide(j) {
   if (r) { loadRideExtras(r, true); liveThenRender([r]); }
 }
 
-// Switch to plan B for change k: everything up to the stop you'd be stranded at, then plan B.
-function takePlanB(k) {
+// Plan B for change k as a whole route: everything up to the stop you'd be stranded at, then plan B.
+function planBJourney(k) {
   const j = currentRide();
-  const ex = rideState.extras;
-  const fb = ex?.fallbacks[k];
-  if (!j || !fb) return;
+  const fb = rideState.extras?.fallbacks[k];
+  if (!j || !fb) return null;
   const ch = rideModel(j).changes[k];
+  if (!ch) return null;
   const raw = { legs: [...j.raw.legs.slice(0, ch.a + 1), ...fb.raw.legs], label: 'Plan B', notes: [`Plan B from ${ch.place}, made ${fmtTime(new Date())}.`] };
   const nj = normJourney(raw, null, j.tab === 'folding');
+  if (!nj) return null;
+  Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab, bike: j.bike, saved: true });
+  nj.peekNote = `Plan B if you miss the ${ch.leg.route.display_name} at ${ch.place}.`;
+  return nj;
+}
+
+// Look at plan B for change k first (its stops and map); Back returns to the ride.
+function peekPlanB(k) {
+  const nj = planBJourney(k);
   if (!nj) return;
-  Object.assign(nj, { key: `${journeyKey(nj, j.tab)}|b`, from: j.from, to: j.to, tab: j.tab, bike: j.bike });
+  state.trail = [...state.trail, snapshot('Ride')];
+  state.peek = { j: nj, k, note: nj.peekNote };
+  state.variantPick = null;
+  writeHash();
+  render();
+  $('#detail').scrollTop = 0;
+}
+
+// Switch the ride to plan B (the one looked at, or change k's as it is now).
+function takePlanB(k, nj = planBJourney(k)) {
+  const j = currentRide();
+  if (!j || !nj) return;
+  delete nj.saved;
   saveJourney(nj);
   unsaveJourney(j.key);
+  state.peek = null;
+  state.trail = [];
   startRide(nj);
   rideState.change = `${fmtTime(new Date())} · Switched to plan B: arrive ${fmtTime(nj.end)}`;
 }
 
+// ---------- going back ----------
+//
+// Opening an alternative (a variant of the open route, plan B while riding, the ride's own
+// route) commits to nothing: it remembers where you were, and Back (labelled with that place)
+// returns there, with the same view, picked variant and scroll position.
+
+function snapshot(label) {
+  const { selected, savedId, rideId, peek, detailView, variantPick } = state;
+  return { label, selected, savedId, rideId, peek, detailView, variantPick, scroll: $('#detail').scrollTop };
+}
+
+function goBack() {
+  const s = state.trail.pop();
+  const { selected, savedId, rideId, peek, detailView, variantPick } = s;
+  Object.assign(state, { selected, savedId, rideId, peek, detailView, variantPick });
+  // renderDetail drops the picked variant when the shown route changes; this one was shown before.
+  const el = $('#detail');
+  el.innerHTML = '';
+  el.dataset.shown = currentDetail()?.key || '';
+  writeHash();
+  render();
+  if (document.body.dataset.mode === 'detail') $('#detail').scrollTop = s.scroll;
+}
+
+// What Back says when it returns to the open route.
+const routeLabel = j => (j ? `${fmtTime(j.start)} route` : 'Back');
+
 function endRide() {
   state.rideId = null;
+  state.peek = null;
+  state.trail = [];
   rideState.facts = null;
   writeHash();
   render();
@@ -2189,7 +2346,7 @@ document.addEventListener('click', e => {
   if (pick) { pickVariant(pick.dataset.pick === state.variantPick ? null : pick.dataset.pick); return; }
   if (state.variantPick && (t.closest('.braid') || t.closest('[data-action="pick-close"]'))) { pickVariant(null); return; }
   const variant = t.closest('[data-variant]');
-  if (variant) { openDetail(variant.dataset.variant); return; }
+  if (variant) { openDetail(variant.dataset.variant, { trail: [...state.trail, snapshot(routeLabel(currentDetail()))] }); return; }
   const route = t.closest('[data-key]');
   if (route) { openDetail(route.dataset.key); return; }
   const z = t.closest('[data-zoom]');
@@ -2206,18 +2363,21 @@ document.addEventListener('click', e => {
   const action = t.closest('[data-action]')?.dataset.action;
   if (action === 'retry') plan();
   if (action === 'back') {
+    if (state.trail.length) { goBack(); return; }
     if (state.savedId) state.savedId = null; else state.selected = null;
     writeHash();
     render();
   }
+  if (action === 'peek-take') { if (state.peek) takePlanB(state.peek.k, state.peek.j); return; }
   if (action === 'saved-menu') { menu.hidden = !menu.hidden; renderSavedBar(); }
   if (action === 'ride-start') { const j = currentDetail(); if (j) startRide(j); return; }
   if (action === 'ride-end') { endRide(); return; }
-  if (action === 'ride-route') { state.savedId = state.rideId; state.rideId = null; writeHash(); render(); return; }
+  if (action === 'ride-route') { state.trail = [snapshot('Ride')]; state.savedId = state.rideId; state.rideId = null; writeHash(); render(); $('#detail').scrollTop = 0; return; }
   if (action === 'ride-notify') { Notification.requestPermission().then(renderRideSoon); return; }
   if (action === 'ride-replan') { endRide(); locate('from'); return; }
+  // "If missed: …" shows plan B first; the alert's "Take plan B" switches straight away.
   const planb = t.closest('[data-planb]');
-  if (planb) { takePlanB(+planb.dataset.planb); return; }
+  if (planb) { if (planb.classList.contains('r-take')) takePlanB(+planb.dataset.planb); else peekPlanB(+planb.dataset.planb); return; }
   if (action === 'toggle-all') { state.showAll = !state.showAll; render(); }
   if (action === 'toggle-save') {
     const j = currentDetail();
@@ -2297,7 +2457,7 @@ new ResizeObserver(() => document.documentElement.style.setProperty('--top-h', `
 setInterval(() => { if (document.body.dataset.stage === 'schedule' && state.status === 'ok') renderSchedule(); }, 30000);
 // Live delays and tracks: every minute, and straight away when you come back to the tab.
 setInterval(liveTick, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); watchHere(mapInSight()); });
 
 $('#swap').innerHTML = icon('swap');
 $('#swap').addEventListener('click', () => {
