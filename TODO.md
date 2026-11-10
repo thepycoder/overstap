@@ -84,6 +84,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 - [ ] Pick 2–3 concepts; likely: When-to-leave staircase (before), Next move + buffers (during), Plan B tree (when things break)
 - [ ] API endpoints for the views: leave-time sweep, per-change slack + fallbacks
 - [x] Ride mode v0: next move + countdown, strip to arrival, spare bars per change, plan B per change, bikes at pickup, alerts on changed facts (ADR-016)
+- [x] Ride mode: whole-journey strip with progress line, all legs (done ones grey), current leg with track + delays (ADR-024)
 - [ ] Ride mode: GPS position instead of the clock (detect getting off early / overshooting)
 - [x] Your position on the map (dot + accuracy, locate button; asks permission once) and Shared bikes as the default tab
 - [x] Alternatives are looked at, not taken: variants and plan B open with a labelled Back to where you were (ADR-023)

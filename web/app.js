@@ -306,6 +306,8 @@ function layout(j) {
     l.arr = lv?.expArr || (lv?.expDep && l.schedArr ? new Date(+l.schedArr + (lv.expDep - l.schedDep)) : l.schedArr) || null;
     if (l.dep && !l.arr) l.arr = new Date(+l.dep + l.dur * 1000);
     l.delay = lv?.expDep && l.schedDep ? Math.round((lv.expDep - l.schedDep) / MIN) : 0;
+    // A ride can leave on time and still get in late (or make up time on the way).
+    l.arrDelay = lv?.isLive && l.arr && l.schedArr ? Math.round((l.arr - l.schedArr) / MIN) : l.delay;
     l.cancelled = lv?.status === 3;
     l.atRisk = false;
   }
@@ -344,6 +346,9 @@ function layout(j) {
   j.cancelled = j.transit.some(l => l.cancelled);
   j.atRisk = j.transit.some(l => l.atRisk);
 }
+
+// How late a ride is at its worst: leaving or getting in.
+const lateBy = l => Math.max(l.delay || 0, l.arrDelay || 0);
 
 // The vehicle a ride is on: its trip, or its line and timetable departure when MOTIS has no trip.
 const tripOf = l => l.tripId || `${l.route.id}@${Math.round(l.schedDep / MIN)}`;
@@ -1051,7 +1056,7 @@ const blockColors = l => (l.kind === 'transit' ? `background:${esc(l.route.ui_co
 
 function legTitle(l, nm, j) {
   if (l.kind === 'transit') {
-    const extra = [l.live?.platform && `track ${l.live.platform}`, l.cancelled ? 'cancelled' : l.delay >= 1 && `${l.delay} min late`].filter(Boolean).join(', ');
+    const extra = [l.live?.platform && `track ${l.live.platform}`, l.cancelled ? 'cancelled' : l.delay >= 1 ? `${l.delay} min late` : l.arrDelay >= 1 && `arrives ${l.arrDelay} min late`].filter(Boolean).join(', ');
     return `${l.route.display_name || ''}${l.headsign ? ` towards ${l.headsign}` : ''}${extra ? ` (${extra})` : ''}\n${nm.from || ''} ${fmtTime(l.dep)} → ${nm.to || ''} ${fmtTime(l.arr)} (${fmtDur(l.dur)})`;
   }
   const what = l.rental ? (l.rental.systemName || l.rental.providerId) : { bike: 'Ride your bike', scooter: 'Scooter', cab: 'Taxi or on-demand', walk: j.ownBike ? 'Walk with your bike' : 'Walk', other: 'Travel' }[l.kind];
@@ -1280,7 +1285,7 @@ function blockHTML(l, nm, p, len, o, j) {
   if (l.kind === 'walk') return `<div class="blk walk" style="${style}" title="${title}"></div>`;
   const tier = o === 'h' ? (len >= 60 ? 2 : len >= 30 ? 1 : 0) : (len >= 34 ? 2 : len >= 16 ? 1 : 0);
   const head = l.kind === 'transit' ? `<span>${esc(l.route.display_name || '')}</span>` : icon(l.kind === 'other' ? 'pin' : l.kind);
-  const delay = l.kind === 'transit' && !l.cancelled && l.delay >= 1 ? `<em class="dly">+${l.delay}</em>` : '';
+  const delay = l.kind === 'transit' && !l.cancelled && lateBy(l) >= 1 ? `<em class="dly">+${lateBy(l)}</em>` : '';
   // A ride you'd have to speed up for shows that speed, where it would show the duration or place.
   const kmh = l.kmh ? `${Math.ceil(l.kmh)} km/h` : '';
   const sub = kmh || nm.to;
@@ -1479,6 +1484,7 @@ function depTimeHTML(l) {
 function liveLabel(l) {
   if (l.cancelled) return '<span class="st cancel">Cancelled</span>';
   if (l.delay >= 1) return `<span class="st late">${l.delay} min late</span>`;
+  if (l.arrDelay >= 1) return `<span class="st late">Arrives ${l.arrDelay} min late</span>`;
   if (l.live?.isLive) return '<span class="st ok">On time</span>';
   return '';
 }
@@ -1620,7 +1626,7 @@ function stopsHTML(j) {
     rows.push(legHTML(l, j));
     rows.push(stopHTML({
       leg: l, side: 'end', cls: destination ? 'destination' : '', time: l.arr,
-      timeCls: (l.kind === 'transit' && l.delay >= 1) || (destination && j.delay >= 1) ? 'late' : '',
+      timeCls: (l.kind === 'transit' && l.arrDelay >= 1) || (destination && j.delay >= 1) ? 'late' : '',
       name: destination ? j.to.name : names[k].to, sub: destination ? j.to.address : '',
     }));
   });
@@ -1818,7 +1824,7 @@ function braidHTML(j, { strands, ghosts }, width) {
       main += `<div class="bb walk" style="${box(mainX + MAIN / 2 - 4, y, 8, h)}" title="${esc(legTitle(l, names[k], j))}"></div>`;
       return;
     }
-    const delay = l.kind === 'transit' && !l.cancelled && l.delay >= 1 ? ` <em class="dly">+${l.delay}</em>` : '';
+    const delay = l.kind === 'transit' && !l.cancelled && lateBy(l) >= 1 ? ` <em class="dly">+${lateBy(l)}</em>` : '';
     const head = h >= 15 ? `<span class="l1">${l.kind === 'transit' ? `<b>${esc(l.route.display_name || '')}</b> ${fmtTime(l.dep)}` : `${icon(l.kind === 'other' ? 'pin' : l.kind)} ${shortDur(l.dur)}`}${delay}</span>` : '';
     const sub = h >= 30 && names[k].to ? `<span class="l2">→ ${esc(names[k].to)}</span>` : '';
     const marks = (ticks.get(k) || []).map(p => `<i class="b-tick" style="top:${(px(+p.t) - y).toFixed(1)}px"><span>${esc(p.stop.name)} ${fmtTime(p.t)}</span></i>`).join('');
@@ -2039,19 +2045,95 @@ function countdownHTML(at, now) {
   return `<div class="r-count"><b>${m < 1 ? 'now' : m}</b>${m < 1 ? '' : '<span>min</span>'}</div>`;
 }
 
-// The rest of the journey to scale, from now (or the start) to arrival.
+// The whole journey to scale, start to arrival: what's behind you greyed out, a red line
+// that moves from left to right with the clock.
 function rideStripHTML(j, now) {
-  const t0 = Math.max(now, +j.start);
+  const t0 = +j.start;
   const total = Math.max(+j.end - t0, MIN);
-  const segs = j.legs.filter(l => +l.arr > t0).map(l => {
-    const a = Math.max(+l.dep, t0);
-    const left = ((a - t0) / total) * 100;
-    const width = Math.max(((l.arr - a) / total) * 100, 0.8);
-    return `<span class="seg-b ${l.kind}${l.kmh ? ' fast' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;${blockColors(l)}"></span>`;
+  const pct = t => ((t - t0) / total) * 100;
+  const at = Math.min(Math.max(now, t0), +j.end);
+  const segs = j.legs.map(l => {
+    const width = Math.max(pct(+l.arr) - pct(+l.dep), 0.8);
+    const seg = (cls, a, w) => `<span class="seg-b ${l.kind}${l.kmh ? ' fast' : ''}${cls}" style="left:${a.toFixed(2)}%;width:${w.toFixed(2)}%;${cls ? '' : blockColors(l)}"></span>`;
+    if (+l.arr <= at) return seg(' past', pct(+l.dep), width);
+    if (+l.dep >= at) return seg('', pct(+l.dep), width);
+    // The leg you're on: done up to now, in colour after.
+    return seg(' past', pct(+l.dep), pct(at) - pct(+l.dep)) + seg('', pct(at), pct(+l.arr) - pct(at));
   }).join('');
+  const started = now > t0;
+  const nowAt = pct(at);
+  const line = started ? `<i class="r-prog" style="width:${nowAt.toFixed(2)}%"></i><i class="r-now" style="left:${nowAt.toFixed(2)}%"></i>` : '';
+  // Hour ticks, left out where they'd collide with the start, end or now labels.
   const hours = [];
-  for (let h = Math.ceil(t0 / (60 * MIN)) * 60 * MIN; h < +j.end; h += 60 * MIN) hours.push(`<i style="left:${((h - t0) / total * 100).toFixed(1)}%">${fmtTime(new Date(h))}</i>`);
-  return `<div class="strip r-strip">${segs}</div><div class="r-strip-lbl"><i style="left:0">${now < +j.start ? fmtTime(j.start) : 'now'}</i>${hours.join('')}<i style="right:0">${fmtTime(j.end)}</i></div>`;
+  for (let h = Math.ceil(t0 / (60 * MIN)) * 60 * MIN; h < +j.end; h += 60 * MIN) {
+    const x = pct(h);
+    if (x > 12 && x < 88 && (!started || Math.abs(x - nowAt) > 12)) hours.push(`<i style="left:${x.toFixed(1)}%">${fmtTime(new Date(h))}</i>`);
+  }
+  const nowLbl = started && nowAt > 10 && nowAt < 90 ? `<i class="now" style="left:${nowAt.toFixed(1)}%">now</i>` : '';
+  return `<div class="strip r-strip">${segs}${line}</div><div class="r-strip-lbl"><i style="left:0">${fmtTime(j.start)}</i>${hours.join('')}${nowLbl}<i style="right:0">${fmtTime(j.end)}</i></div>`;
+}
+
+// A time, with the timetable time struck through when it's moved.
+const liveTimeHTML = (t, sched) => (sched && Math.abs(t - sched) >= MIN
+  ? `<b class="${t > sched ? 'dly' : ''}">${fmtTime(t)}</b><s>${fmtTime(sched)}</s>` : `<b>${fmtTime(t)}</b>`);
+
+// What the leg you're on (or waiting for) looks like up close: where it leaves from, how late it
+// runs, how far along you are.
+function rideLegNowHTML(l, now) {
+  const bits = [];
+  const on = now >= +l.dep;
+  if (l.kind === 'transit') {
+    const b = boardAt(l);
+    const how = (d, verb) => (d >= 1 ? `<span class="dly">${verb} ${d} min late</span>` : d <= -1 ? `${verb} ${-d} min early` : `${verb} on time`);
+    if (l.cancelled) bits.push('<span class="st cancel">Cancelled</span>');
+    else {
+      if (!on) bits.push(`${b ? `<span class="trk${b.changed ? ' changed' : ''}">${esc(`${b.what} ${b.at}`)}</span>` : ''}${how(l.delay, on ? 'Left' : 'Leaves')}${b?.changed ? ' · <span class="dly">track changed</span>' : ''}`);
+      else bits.push(how(l.delay, 'Left'));
+      bits.push(`${how(l.arrDelay, 'Arrives')} · ${fmtTime(l.arr)}${l.live?.isLive && l.schedArr && Math.abs(l.arr - l.schedArr) >= MIN ? ` instead of ${fmtTime(l.schedArr)}` : ''}`);
+    }
+    if (l.trainNo) bits.push(`Train ${esc(l.trainNo)}${l.route.agency ? ` · ${esc(l.route.agency)}` : ''}`);
+    if (on) {
+      const shift = l.schedDep && l.dep ? l.dep - l.schedDep : 0;
+      const ahead = l.stops.slice(1, -1).filter(s => s.sched && +s.sched + shift > now);
+      bits.push(ahead.length ? `Next stop ${esc(ahead[0].name)} · ${ahead.length} stop${ahead.length > 1 ? 's' : ''} before yours` : 'Your stop is next');
+    }
+  }
+  const left = on ? `${mins((l.arr - now) / 1000)} to go` : `leaves in ${mins(Math.max(0, l.dep - now) / 1000)}`;
+  const p = on ? Math.min(1, (now - l.dep) / Math.max(l.arr - l.dep, 1)) : 0;
+  return `<div class="r-leg-now">${bits.map(t => `<div class="r-leg-bit">${t}</div>`).join('')}
+    <div class="r-leg-prog"><span style="width:${(p * 100).toFixed(1)}%"></span></div><small>${left}</small></div>`;
+}
+
+// Every leg of the journey in order: done ones greyed, the current one opened up, with the
+// spare time at each change ahead in between.
+function rideLegsHTML(j, m, now, ex) {
+  const names = legNames(j);
+  const legs = j.legs;
+  let ks = legs.map((l, k) => k).filter(k => isSegment(legs[k], j));
+  if (!ks.length) ks = legs.map((l, k) => k);
+  const cur = ks.find(k => +legs[k].arr > now) ?? -1;
+  const cardAt = new Map(m.changes.map((ch, i) => [ch.b, changeCardHTML(ch, i, ex ? ex.fallbacks[i] : undefined)]));
+  if (m.pickup >= 0) cardAt.set(m.pickup, (cardAt.get(m.pickup) || '') + pickupCardHTML(j, m.pickup, ex ? ex.rentals[0] : undefined));
+  const rows = [];
+  for (const k of ks) {
+    const l = legs[k];
+    // Cards for changes that happen through legs that aren't shown (walks between platforms).
+    for (const [b, html] of cardAt) if (b <= k) { rows.push(html); cardAt.delete(b); }
+    const state = +l.arr <= now ? 'past' : k === cur ? 'cur' : '';
+    const nm = names[k];
+    const what = l.kind === 'transit'
+      ? `${icon(l.vehicle)} ${pill(l.route)}${l.headsign ? ` <span>to ${esc(l.headsign)}</span>` : ''}`
+      : `${icon(l.kind === 'other' ? 'pin' : l.kind)} <span>${esc(l.rental ? `${l.rental.systemName || l.rental.providerId}${l.rental.electric ? ' e-bike' : ''}` : titleCase(legLabel(l)))} ${mins(l.dur)}</span>`;
+    const where = l.kind === 'walk' && nm.from === nm.to ? esc(nm.from || '') : `${esc(nm.from || '')} → ${esc(nm.to || '')}`;
+    const b = state !== 'past' && boardAt(l);
+    const status = l.kind === 'transit' && !state ? liveLabel(l) : '';
+    rows.push(`<div class="r-leg ${l.kind} ${state}${l.cancelled ? ' cancelled' : ''}" style="--c:${esc(legColor(l))}">
+      <div class="r-leg-t">${l.kind === 'transit' ? liveTimeHTML(l.dep, l.schedDep) : `<b>${fmtTime(l.dep)}</b>`}<span>${l.kind === 'transit' ? liveTimeHTML(l.arr, l.schedArr) : fmtTime(l.arr)}</span></div>
+      <div class="r-leg-b"><div class="r-leg-h">${what}${status ? ` ${status}` : ''}${b && state !== 'cur' ? ` <span class="trk${b.changed ? ' changed' : ''}">${esc(`${b.what} ${b.at}`)}</span>` : ''}${state === 'past' ? ' <span class="r-tick">✓</span>' : ''}</div>
+        <div class="r-leg-w">${where}</div>${state === 'cur' ? rideLegNowHTML(l, now) : ''}</div></div>`);
+  }
+  for (const html of cardAt.values()) rows.push(html);
+  return rows.join('');
 }
 
 // Big enough to read while walking: where the next ride leaves from.
@@ -2115,8 +2197,6 @@ function renderRide(j) {
     ? `<s>${fmtTime(j.end)}</s> <b class="dly">${fmtTime(lost.fb.end)}</b>`
     : `<b class="${j.delay >= 1 ? 'dly' : ''}">${fmtTime(j.end)}</b>`;
   const live = j.transit.some(l => l.live?.isLive);
-  const cards = m.changes.map((ch, k) => changeCardHTML(ch, k, ex ? ex.fallbacks[k] : undefined)).join('')
-    + (m.pickup >= 0 ? pickupCardHTML(j, m.pickup, ex ? ex.rentals[0] : undefined) : '');
   const notifyBtn = 'Notification' in window && Notification.permission === 'default'
     ? '<button type="button" class="r-notify" data-action="ride-notify">Allow alerts</button>' : '';
   $('#ride').innerHTML = `<div class="r-top"><span>${esc(on)} · ${fmtTime(new Date(now))} · arrive ${arrive}</span>
@@ -2127,7 +2207,7 @@ function renderRide(j) {
     ${lost ? `<div class="r-alert bad"><b>${lost.ch.leg.cancelled ? `The ${esc(lost.ch.leg.route.display_name)} is cancelled` : `You'll miss the ${esc(lost.ch.leg.route.display_name)} at ${esc(lost.ch.place)}`}</b>
       ${lost.fb ? `<button type="button" class="r-take" data-planb="${lost.k}">Take plan B: arrive ${fmtTime(lost.fb.end)}</button>` : ' Looking for plan B…'}</div>`
       : j.cancelled ? '<div class="r-alert bad">A ride on this route is cancelled. Replan from here.</div>' : ''}
-    <div class="r-cards">${cards || '<div class="muted r-empty">No more changes. Enjoy the ride.</div>'}</div>
+    <div class="r-cards">${rideLegsHTML(j, m, now, ex)}</div>
     <div class="r-actions">${notifyBtn}<button type="button" data-action="ride-route">Route &amp; map</button><button type="button" data-action="ride-replan">Replan from here</button><button type="button" class="r-end" data-action="ride-end">End ride</button></div>`;
   maybeAlert(j, m, now, lost);
 }

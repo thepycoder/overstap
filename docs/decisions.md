@@ -461,3 +461,22 @@ you look at plan B (ride mode isn't rendering). The phone's back button isn't wi
 Also decided (user, 2026-11-10): **Shared bikes is the default tab**, then Folding bike, then On
 foot. Links without `tab=` now open Shared bikes.
 
+## ADR-024 — Ride mode shows the whole journey; rides are late if they arrive late
+
+**Context.** A ride's delay was only measured at departure, so a train that left on time and
+got in late showed a yellow arrival up top but an "On time" badge on the train itself. Ride
+mode only showed what was left of the journey (strip from now, change cards), so you lost
+sight of where you'd been and the ride you were on had no details (track, how late).
+
+**Decision.**
+- Each ride also gets `arrDelay` (live arrival vs timetable). Its badge says "N min late" when
+  it leaves late, else "Arrives N min late"; the timetable blocks show the larger of the two.
+- Ride mode's strip spans the whole journey: legs behind you greyed out, a red line and
+  progress bar at "now" moving left to right.
+- Below it, every leg in order (done ones grey with ✓), the change and pickup cards between the
+  legs they belong to. The leg you're on or waiting for opens up: track, leaves/left and
+  arrives on time or N min late (with the timetable time), train number, next stop and stops
+  left, and a progress bar for the leg.
+
+**Consequences.** Ride mode is longer; on a phone the later legs scroll. The top (next move,
+countdown, track badge) is unchanged.

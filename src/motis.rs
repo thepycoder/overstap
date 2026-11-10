@@ -372,7 +372,7 @@ impl Client {
         if !status.is_success() {
             anyhow::bail!(
                 "MOTIS /plan returned {status}: {}",
-                &body[..body.len().min(400)]
+                body.chars().take(400).collect::<String>()
             );
         }
         serde_json::from_str(&body).context("decoding MOTIS /plan response")
