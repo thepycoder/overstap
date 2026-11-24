@@ -41,3 +41,19 @@ the schema and would drop fields.
 
 Not checked: since when. The rt-log history on the NAS would show when the
 20271210 suffixes appeared (likely when the static feed was extended past 13 Dec).
+
+## Fix: `overstap rt-fix` (ADR-027), tested the same morning
+
+| Feed MOTIS reads | MOTIS `GTFS-RT update stats for tag=sncb` | 2957 at Berchem |
+|---|---|---|
+| NMBS direct (frozen 06:52 snapshot) | 369 / 613 resolved, `trip_resolve_error=244` (39.8 %) | 06:29, no real time |
+| same snapshot through rt-fix | 610 / 613, 3 errors (0.5 %) | **06:29 → 06:34**, real time |
+| live feed through rt-fix (`motis-run` → `run.sh`) | 608 / 612 (99.3 %) | — |
+
+Berchem departures 06:20–08:00 with real time: 15 of 40 before, 29 of 40 after. The 3 left:
+one has yesterday's `start_date` (outside `first_day: TODAY`), two are cancellations.
+rt-fix output vs input (Google's `gtfs-realtime-bindings`): same 613 entities and header; 241
+trip IDs changed, nothing else; every update now names a static trip, no (trip, date) twice.
+Matching checked against stop times: 238 of 244 rewritten trips have every RT stop at the
+static time; the other 6 are the only candidate with one stop off (a foreign stop or the
+last stop's arrival). The static index (30,421 trips, 1.24 M calendar dates) loads in ~140 ms.

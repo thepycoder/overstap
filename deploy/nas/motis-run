@@ -6,5 +6,15 @@ mkdir -p "$MOTIS_DIR"
 cd "$MOTIS_DIR"
 # The config ships with the image; a copy in the volume wins, so it can be edited on the NAS.
 [ -e config.yml ] || cp /app/motis/config.yml config.yml
+# Configs from before ADR-027 fetch NMBS real time directly, and MOTIS drops ~40 % of it
+# (trip IDs that don't match the static feed's): route it through `overstap rt-fix`.
+# data/config.yml is the copy `motis server` reads; config.yml the one the next import uses.
+NMBS_RT=https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de
+for f in config.yml data/config.yml; do
+  if [ -e "$f" ] && grep -q "url: $NMBS_RT" "$f"; then
+    sed -i "s|url: $NMBS_RT|url: http://localhost:8739/sncb|" "$f"
+    echo "motis-run: $f: NMBS real time now through overstap rt-fix (ADR-027)"
+  fi
+done
 ln -sfn /app/motis-ui ui
 exec /app/motis/run.sh

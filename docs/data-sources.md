@@ -7,7 +7,7 @@ Status checked hands-on on 2026-10-29 (download + MOTIS import) unless marked "v
 | Source | Format | URL | Access | Notes |
 |---|---|---|---|---|
 | NMBS/SNCB timetable | GTFS static | `https://sncb-opendata.hafas.de/gtfs/static/c21ac6758dd25af84cca5b707f3cb3de` | Public (key in URL, from Transitous) | 39 MB zip. `transfers.txt` sets 240 s at most stations, 300 s at some |
-| NMBS/SNCB real time | GTFS-RT | `https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de` | Public | ~130 KB per fetch |
+| NMBS/SNCB real time | GTFS-RT | `https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de` | Public | ~210 KB per fetch. Trip IDs' last segment can differ from the static feed's (~40 % of updates, 2026-11): MOTIS reads it through `overstap rt-fix` (ADR-027) |
 | De Lijn timetable | GTFS static | `https://api-management-opendata-production.azure-api.net/api/gtfs/feed/delijn/static` | Worked **without** a key (Transitous sends a `bmc-partner-key` header) | 208 MB zip, 1.7 GB `stop_times.txt` |
 | De Lijn real time | GTFS-RT | `…/api/gtfs/feed/delijn/rt/trip-update?format=protobuf` (+ `/rt/alert`) | Worked without a key | ~1.8 MB per fetch |
 | NMBS (alt. portal) | GTFS + RT | `…/api/gtfs/feed/nmbssncb/static`, `…/nmbssncb/rt/trip-update` | Same Belgian Mobility portal | From Transitland atlas; not tested |

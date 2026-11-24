@@ -5,7 +5,7 @@ Three containers from one image (`Dockerfile`, built by GitHub Actions on every 
 
 | Service | What | Port |
 |---|---|---|
-| `motis` | MOTIS server; imports Belgium on first start; refreshes every night at `UPDATE_AT` (timetables daily, OSM weekly) and swaps the new data in with a health check and rollback (`deploy/motis/update.sh`) | 8080 (LAN, optional) |
+| `motis` | MOTIS server; imports Belgium on first start; refreshes every night at `UPDATE_AT` (timetables daily, OSM weekly) and swaps the new data in with a health check and rollback (`deploy/motis/update.sh`). Also runs `overstap rt-fix` (localhost:8739), which MOTIS reads NMBS real time from (ADR-027) | 8080 (LAN, optional) |
 | `overstap` | web UI + API (`overstap serve`), on the `proxy` network for cloudflared | 8738 on the LAN |
 | `rtlog` | GTFS-RT history logger (`overstap rt-log`) → `data/rt/rt.sqlite` | — |
 
@@ -56,3 +56,6 @@ can read packages.
 - MOTIS config: `data/motis/config.yml` (copied from the image on first start; edit there).
   `update.sh` re-imports with it, so changes take effect at the next update.
 - Logs of the nightly update: `data/motis/update.log`, `import.log`.
+- NMBS real time: `docker compose logs motis | grep -E 'rt-fix|tag=sncb'`. rt-fix logs hourly how many
+  trips it re-matched; MOTIS's `GTFS-RT update stats for tag=sncb` should show ~99 % success
+  (60 % without rt-fix). `motis-run` points a pre-ADR-027 `config.yml` at rt-fix by itself.

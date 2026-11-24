@@ -16,6 +16,8 @@ a folding bike and walking; re-plans live when delayed or stranded.
   `~/Projects/bike-transit`). The API passes MOTIS itineraries through; `web/app.js` `normLeg()`
   is the only adapter (ADR-012). Ride mode (`renderRide`, `/api/ride` for plan B) in the same files,
   and the route detail's Variants view (braided lane, `braidOf`/`braidHTML`, ADR-019).
+- **NMBS RT proxy**: `overstap rt-fix` (`rtfix.rs`, ADR-027) re-matches NMBS GTFS-RT trip IDs to the
+  static feed's (their last date segment differs); MOTIS reads NMBS RT from it (localhost:8739), `run.sh` runs it.
 - **RT logger**: `overstap rt-log` → SQLite (`rtlog.rs`, hand-written prost types in `gtfs_rt.rs`), `rt-report`.
 - **Deploy**: `deploy/motis/update.sh` (nightly refresh + swap + rollback), `run.sh` (supervisor);
   `Dockerfile` + `deploy/nas/compose.yaml` (motis, overstap, rtlog), image built by `.github/workflows/image.yml`.
@@ -31,6 +33,9 @@ a folding bike and walking; re-plans live when delayed or stranded.
   background processes die after ~2 h, so restart `motis server` when needed.
 - `motis server` reads `data/config.yml` (copied at import), not `config.yml`: a GBFS feed added
   after import must go into `data/config.yml` too (or re-import).
+- NMBS real time comes through `overstap rt-fix` on :8739 (ADR-027): when running `motis server` by hand,
+  start `target/release/overstap rt-fix --gtfs sncb.zip` in the MOTIS dir too. MOTIS's own HTTP client
+  ignores the cloud workspace's egress proxy ("Host not found"); rt-fix (reqwest) doesn't.
 - Docker works in cloud workspaces after starting `dockerd` (background); builds need the
   proxy CA as a build secret and HTTPS apt sources — keep such tweaks in a scratch copy of the
   Dockerfile, not the repo one. Containers' own HTTPS fails there (TLS interception); fine at home.
