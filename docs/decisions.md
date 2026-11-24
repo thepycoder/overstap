@@ -540,3 +540,35 @@ showed every stop as *scheduled departure + delay at the boarding stop* (Lier 17
 **Consequences.** One more MOTIS call per search. The 5-min threshold and "decide at the stop"
 don't use how often trains actually catch up. Learning catch-up per stretch from the RT logger
 (the shortest running time actually observed) would turn "N′ short" into a likelihood.
+
+## ADR-027 — NMBS real time through a trip-ID fixing proxy (`overstap rt-fix`)
+*2026-11-24 · accepted*
+
+**Context.** S33 2957 left Berchem 5 min late; overstap showed it on time and gone. NMBS's
+GTFS-RT feed had the delay, under trip ID `…:825:20271210`; the static feed has `…:825:20270930`.
+The last segment of an NMBS trip ID is the trip's last service date, and the static export
+clips it to its `feed_end_date` (20270930) while the HAFAS realtime export doesn't. MOTIS
+matches updates on the exact `trip_id`: 244 of 613 (40 %) failed to resolve, i.e. every train
+that runs on past the static feed's end. MOTIS runs unmodified (ADR-003) and has no fuzzy
+matching; the static feed can't be fixed instead, because its clipped IDs don't say what the
+realtime suffix will be (20271209, 20271210, 20271211 all occur).
+
+**Decision.** MOTIS reads NMBS GTFS-RT from `overstap rt-fix` (`http://localhost:8739/sncb`,
+started and restarted by `run.sh` next to `motis server`). Per fetch it:
+1. keeps every trip the static feed (`sncb.zip`, re-read when it changes) knows;
+2. gives any other trip the ID of the static trip with the same ID up to the last `:`, that
+   runs on the update's `start_date` and isn't claimed by another update in the feed (NMBS has
+   twins that differ only in the last segment, each with its own update); of several, the one
+   whose last segment is the closest date; added/unscheduled trips are left alone;
+3. rewrites only `trip_id` at the protobuf wire level, copying every other byte, rather than
+   decode and re-encode with `gtfs_rt.rs`'s partial types.
+`motis-run` points existing NAS configs (`config.yml`, `data/config.yml`) at the proxy once.
+
+**Consequences.** Tested on 2026-11-24's feed: MOTIS resolves 608–610 of ~613 updates (the rest
+are yesterday's service day, outside `first_day: TODAY`, and cancellations), and 2957 shows +5.
+The output differs from the input only in the 241 rewritten IDs (checked with Google's bindings).
+NMBS real time now depends on one more process; it fails closed per fetch (502 → MOTIS keeps
+its last state) and passes the feed on unchanged without a static feed. For ~3 min during the
+nightly update the proxy may already use the new `sncb.zip` while MOTIS still serves the old
+one. The RT logger still stores NMBS's own IDs, so joins to the static feed need the same
+matching. If NMBS fixes its export, the proxy just finds every trip known.

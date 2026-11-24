@@ -15,6 +15,7 @@ mod overshoot;
 mod places;
 mod planner;
 mod render;
+mod rtfix;
 mod rtlog;
 mod server;
 
@@ -100,6 +101,17 @@ enum Cmd {
         /// Poll once and exit.
         #[arg(long)]
         once: bool,
+    },
+    /// Serve NMBS GTFS-RT to MOTIS with trip IDs matched to the static feed (ADR-027).
+    RtFix {
+        #[arg(long, default_value = "127.0.0.1:8739", env = "OVERSTAP_RT_FIX_LISTEN")]
+        listen: String,
+        /// The GTFS-RT feed to fix.
+        #[arg(long, default_value = rtlog::FEEDS[0].1)]
+        upstream: String,
+        /// The static GTFS (zip) MOTIS imported for that feed.
+        #[arg(long, default_value = "sncb.zip")]
+        gtfs: std::path::PathBuf,
     },
     /// Summarise a GTFS-RT log database.
     RtReport {
@@ -263,6 +275,15 @@ fn main() -> Result<()> {
             once,
         })?,
         Cmd::RtReport { db } => rtlog::report(&db)?,
+        Cmd::RtFix {
+            listen,
+            upstream,
+            gtfs,
+        } => rtfix::serve(rtfix::Options {
+            listen,
+            upstream,
+            gtfs,
+        })?,
         Cmd::Overshot {
             to,
             trip,

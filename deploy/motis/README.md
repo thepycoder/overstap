@@ -16,7 +16,8 @@
 
 - OSM: Geofabrik `belgium-latest.osm.pbf` (and possibly a small buffer into NL/FR/LU later)
 - GTFS: NMBS, De Lijn (+ TEC, STIB later) — see `docs/data-sources.md`
-- GTFS-RT: NMBS, De Lijn
+- GTFS-RT: NMBS (through `overstap rt-fix`, which `run.sh` starts: it re-matches NMBS's trip IDs to
+  the static feed's, ADR-027), De Lijn
 - GBFS: per operator
 
 ## Quick start (tested 2026-10-29, MOTIS v2.11.4)

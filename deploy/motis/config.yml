@@ -18,7 +18,10 @@ timetable:
       path: sncb.zip
       default_bikes_allowed: true
       rt:
-        - url: https://sncb-opendata.hafas.de/gtfs/realtime/c21ac6758dd25af84cca5b707f3cb3de
+        # NMBS's feed (https://sncb-opendata.hafas.de/gtfs/realtime/c21ac…) through
+        # `overstap rt-fix`, which run.sh starts: it gives trip IDs the static feed's
+        # spelling, else MOTIS drops ~40 % of the updates (ADR-027).
+        - url: http://localhost:8739/sncb
     delijn:
       path: delijn.zip
       rt:
