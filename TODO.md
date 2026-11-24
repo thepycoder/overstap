@@ -59,6 +59,7 @@ Legend: `[ ]` open · `[~]` in progress · `[x]` done. Keep items small; link to
 ## Phase 3 — Real time & reliability
 
 - [x] Delay *simulation* (`--delay N`) for use case 3
+- [ ] **NMBS RT trip-ID mismatch** (results-2026-11-24-rt-trip-ids): 40 % of NMBS GTFS-RT updates use a different last trip_id segment (`:20271210` vs static `:20270930`) and MOTIS drops them. RT proxy that rewrites trip_id (prefix + service on start_date); check rt-log for when it started
 - [x] NMBS platforms from iRail in `/api/live`; ride mode shows the next track big (ADR-022)
 - [ ] Ride mode: flag platform changes iRail reports (`platforminfo.normal = 0`)
 - [ ] De Lijn platforms: check whether its GTFS has `platform_code` (MOTIS `track`) at stations like Gent-Sint-Pieters
